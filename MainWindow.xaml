@@ -169,6 +169,7 @@
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
                             <DockPanel LastChildFill="True" Margin="0,0,0,14">
@@ -176,9 +177,14 @@
                                 <StackPanel>
                                     <TextBlock Text="Приложения для VPN" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
                                     <TextBlock Text="Отметьте браузер, Discord или другие программы, которые должны идти через VPN." Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" />
+                                    <TextBlock Text="{Binding SelectedApplicationsText}" Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" />
                                 </StackPanel>
                             </DockPanel>
-                            <ListBox Grid.Row="1" ItemsSource="{Binding AvailableApplications}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                            <DockPanel Grid.Row="1" LastChildFill="True" Margin="0,0,0,14">
+                                <Button DockPanel.Dock="Right" Content="Добавить" Command="{Binding AddManualApplicationCommand}" Margin="10,0,0,0" />
+                                <TextBox Text="{Binding ManualProcessName, UpdateSourceTrigger=PropertyChanged}" ToolTip="Например: chrome.exe, firefox.exe, discord.exe" />
+                            </DockPanel>
+                            <ListBox Grid.Row="2" ItemsSource="{Binding AvailableApplications}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Margin="8,6">
@@ -216,6 +222,7 @@
             </TabItem>
         </TabControl>
 
-        <TextBlock Grid.Row="3" Margin="0,16,0,0" Foreground="{StaticResource MutedBrush}" Text="Стадия: UX-каркас авторизации, подписки, power-подключения и split tunneling. Следующий слой: серверная Telegram-авторизация и проверка реального sing-box ядра." />
+        <TextBlock Grid.Row="3" Margin="0,16,0,0" Foreground="{StaticResource MutedBrush}" Text="Стадия: защищенное локальное хранение настроек, UX авторизации, power-подключение и split tunneling. Следующий слой: серверная Telegram-авторизация и проверка реального sing-box ядра." />
     </Grid>
 </Window>
+

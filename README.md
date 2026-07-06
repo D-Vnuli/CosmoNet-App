@@ -4,7 +4,7 @@ Native Windows client for CosmoNet subscriptions. The app is built on WPF and pr
 
 ## Current Stage
 
-Stage 2: product UX skeleton and routing foundation.
+Stage 3: local security hardening and split tunneling usability.
 
 Implemented:
 
@@ -15,8 +15,11 @@ Implemented:
 - Separate tabs for the main dashboard, app routing, and instructions.
 - Traffic mode selection: all traffic through VPN or only selected applications.
 - Local discovery of running/installed `.exe` applications for split tunneling selection.
+- Manual process entry for apps that are not found automatically, for example `discord.exe` or `chrome.exe`.
+- Lazy app loading: saved selected processes appear instantly, full app scan runs only when requested.
 - `sing-box` route generation for selected applications using `process_name` rules.
-- Local-only settings in `%AppData%\CosmoNet\settings.json`.
+- Subscription URL is stored outside public settings in a Windows DPAPI-protected local file.
+- Public settings stay in `%AppData%\CosmoNet\settings.json`; protected secrets stay in `%AppData%\CosmoNet\secrets.dat`.
 
 Not implemented yet:
 
@@ -49,5 +52,6 @@ TUN mode requires running the app as administrator.
 ## Security Notes
 
 - Do not commit `.env`, subscription URLs, Telegram identifiers, generated configs, or local settings.
+- Subscription URLs and future auth tokens must live in the DPAPI-protected `secrets.dat`, not in `settings.json`.
 - The app stores selected process names locally; absolute app paths are only used for local display.
 - The `sing-box` binary is intentionally ignored by git and should be supplied by the installer or local developer setup.

@@ -21,6 +21,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _statusText = "Готов к настройке";
     private string _authStatus = "Войдите через Telegram, чтобы приложение могло получить вашу подписку.";
     private string _loginCode = "------";
+    private string _manualProcessName = "";
     private bool _isBusy;
     private bool _isConnected;
     private TrafficMode _trafficMode = TrafficMode.AllTraffic;
@@ -34,6 +35,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SaveCommand = new RelayCommand(SaveAsync, () => !IsBusy);
         OpenDataFolderCommand = new RelayCommand(OpenDataFolderAsync);
         LoadApplicationsCommand = new RelayCommand(LoadApplicationsAsync, () => !IsBusy);
+        AddManualApplicationCommand = new RelayCommand(AddManualApplicationAsync, () => !IsBusy);
         GenerateLoginCodeCommand = new RelayCommand(GenerateLoginCodeAsync, () => !IsBusy);
     }
 
@@ -48,6 +50,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand SaveCommand { get; }
     public ICommand OpenDataFolderCommand { get; }
     public ICommand LoadApplicationsCommand { get; }
+    public ICommand AddManualApplicationCommand { get; }
     public ICommand GenerateLoginCodeCommand { get; }
 
     public string SubscriptionUrl
@@ -72,6 +75,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         get => _loginCode;
         set => SetField(ref _loginCode, value);
+    }
+
+    public string ManualProcessName
+    {
+        get => _manualProcessName;
+        set => SetField(ref _manualProcessName, value);
     }
 
     public bool IsBusy
@@ -187,6 +196,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ? "Весь трафик через VPN"
         : "Через VPN только выбранные приложения";
 
+    public string SelectedApplicationsText => $"Выбрано приложений: {GetSelectedProcessNames().Count}";
+
     public string LastRefreshText => LastRefresh?.ToString("dd.MM.yyyy HH:mm") ?? "Еще не обновлялась";
 
     public async Task InitializeAsync()
@@ -195,7 +206,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SubscriptionUrl = settings.SubscriptionUrl;
         TrafficMode = settings.TrafficMode;
         LastRefresh = settings.LastSubscriptionRefresh;
-        await LoadApplicationsAsync(settings.SelectedProcessNames);
+        LoadSavedApplications(settings.SelectedProcessNames);
 
         OnPropertyChanged(nameof(CoreStatus));
         OnPropertyChanged(nameof(AdminStatus));
@@ -295,6 +306,42 @@ public sealed class MainViewModel : INotifyPropertyChanged
             }
 
             StatusText = $"Найдено приложений: {AvailableApplications.Count}";
+            OnPropertyChanged(nameof(SelectedApplicationsText));
+        });
+    }
+
+    private async Task AddManualApplicationAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            var processName = NormalizeProcessName(ManualProcessName);
+            if (string.IsNullOrWhiteSpace(processName))
+            {
+                StatusText = "Введите имя процесса, например discord.exe";
+                return;
+            }
+
+            var existing = AvailableApplications.FirstOrDefault(
+                app => app.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase));
+
+            if (existing is not null)
+            {
+                existing.IsSelected = true;
+            }
+            else
+            {
+                AvailableApplications.Insert(0, new InstalledApplication
+                {
+                    DisplayName = Path.GetFileNameWithoutExtension(processName),
+                    ProcessName = processName,
+                    IsSelected = true
+                });
+            }
+
+            ManualProcessName = "";
+            await SaveAsync(setStatus: false);
+            StatusText = $"Добавлено приложение: {processName}";
+            OnPropertyChanged(nameof(SelectedApplicationsText));
         });
     }
 
@@ -317,6 +364,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             StatusText = "Настройки сохранены";
         }
+
+        OnPropertyChanged(nameof(SelectedApplicationsText));
     }
 
     private Task OpenDataFolderAsync()
@@ -331,15 +380,46 @@ public sealed class MainViewModel : INotifyPropertyChanged
         return Task.CompletedTask;
     }
 
+    private void LoadSavedApplications(IEnumerable<string> selectedProcessNames)
+    {
+        AvailableApplications.Clear();
+
+        foreach (var processName in selectedProcessNames.Select(NormalizeProcessName).Where(name => !string.IsNullOrWhiteSpace(name)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            AvailableApplications.Add(new InstalledApplication
+            {
+                DisplayName = Path.GetFileNameWithoutExtension(processName),
+                ProcessName = processName,
+                IsSelected = true
+            });
+        }
+
+        OnPropertyChanged(nameof(SelectedApplicationsText));
+    }
+
     private List<string> GetSelectedProcessNames()
     {
         return AvailableApplications
             .Where(app => app.IsSelected)
-            .Select(app => app.ProcessName)
+            .Select(app => NormalizeProcessName(app.ProcessName))
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static string NormalizeProcessName(string value)
+    {
+        var processName = value.Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            return "";
+        }
+
+        processName = Path.GetFileName(processName);
+        return processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? processName
+            : $"{processName}.exe";
     }
 
     private void ReplaceProfiles(IEnumerable<VpnProfile> profiles)
@@ -376,6 +456,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ConnectionStateText));
         OnPropertyChanged(nameof(PowerButtonColor));
         OnPropertyChanged(nameof(TrafficModeText));
+        OnPropertyChanged(nameof(SelectedApplicationsText));
     }
 
     private void RaiseCommandStates()
@@ -384,6 +465,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ((RelayCommand)DisconnectCommand).RaiseCanExecuteChanged();
         ((RelayCommand)SaveCommand).RaiseCanExecuteChanged();
         ((RelayCommand)LoadApplicationsCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)AddManualApplicationCommand).RaiseCanExecuteChanged();
         ((RelayCommand)GenerateLoginCodeCommand).RaiseCanExecuteChanged();
     }
 
