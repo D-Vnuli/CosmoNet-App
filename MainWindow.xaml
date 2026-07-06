@@ -4,86 +4,218 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="CosmoNet" Height="640" Width="980" MinHeight="560" MinWidth="820"
+        Title="CosmoNet" Height="760" Width="1120" MinHeight="680" MinWidth="960"
         Background="{StaticResource SurfaceBrush}">
-    <Grid Margin="28">
+    <Grid Margin="24">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <DockPanel Grid.Row="0" LastChildFill="True" Margin="0,0,0,22">
+
+        <DockPanel Grid.Row="0" LastChildFill="True" Margin="0,0,0,18">
             <StackPanel DockPanel.Dock="Left">
                 <TextBlock Text="CosmoNet" FontSize="30" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
-                <TextBlock Text="Windows-клиент для вашей подписки VPN" FontSize="14" Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" />
+                <TextBlock Text="Windows-клиент VPN: авторизация, подписка и подключение в один клик" FontSize="14" Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" />
             </StackPanel>
-            <Border DockPanel.Dock="Right" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Background="White" Padding="14,10">
+            <StackPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
+                <TextBlock Text="{Binding CoreStatus}" FontWeight="SemiBold" Foreground="{StaticResource InkBrush}" HorizontalAlignment="Right" />
+                <TextBlock Text="{Binding AdminStatus}" Margin="0,3,0,0" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right" />
+            </StackPanel>
+        </DockPanel>
+
+        <Grid Grid.Row="1" Margin="0,0,0,18">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="24" />
+                <ColumnDefinition Width="150" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="16,12">
                 <StackPanel>
-                    <TextBlock Text="{Binding CoreStatus}" FontWeight="SemiBold" Foreground="{StaticResource InkBrush}" />
-                    <TextBlock Text="{Binding AdminStatus}" Margin="0,3,0,0" Foreground="{StaticResource MutedBrush}" />
+                    <TextBlock Text="Срок подписки" Foreground="{StaticResource MutedBrush}" />
+                    <TextBlock Text="{Binding SubscriptionExpiresText}" FontSize="16" FontWeight="Bold" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{StaticResource InkBrush}" />
                 </StackPanel>
             </Border>
-        </DockPanel>
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*" MinWidth="430" />
-                <ColumnDefinition Width="20" />
-                <ColumnDefinition Width="*" MinWidth="280" />
-            </Grid.ColumnDefinitions>
-            <Border Grid.Column="0" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="22">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Text="Подписка" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
-                    <TextBox Grid.Row="1" Margin="0,14,0,12" Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" ToolTip="Ссылка вида https://ваш-домен/sub/идентификатор" />
-                    <WrapPanel Grid.Row="2" Margin="0,0,0,18">
-                        <Button Content="Обновить" Command="{Binding RefreshCommand}" Margin="0,0,8,0" />
-                        <Button Content="Сохранить" Command="{Binding SaveCommand}" Margin="0,0,8,0" />
-                        <Button Content="Папка данных" Command="{Binding OpenDataFolderCommand}" />
-                    </WrapPanel>
-                    <ListBox Grid.Row="3" ItemsSource="{Binding Profiles}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
-                                        <TextBlock Foreground="{StaticResource MutedBrush}" Margin="0,3,0,0">
-                                            <Run Text="{Binding Network}" /><Run Text=" / " /><Run Text="{Binding Security}" />
-                                        </TextBlock>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="{Binding Protocol}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </Grid>
-            </Border>
-            <Border Grid.Column="2" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="22">
+
+            <Border Grid.Column="2" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="16,12">
                 <StackPanel>
-                    <TextBlock Text="Подключение" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
-                    <Border Margin="0,18,0,18" Padding="18" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                    <TextBlock Text="Статус сервера" Foreground="{StaticResource MutedBrush}" />
+                    <TextBlock Text="{Binding ServerStatusText}" FontSize="16" FontWeight="Bold" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{StaticResource InkBrush}" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="4" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="16,12">
+                <StackPanel>
+                    <TextBlock Text="Состояние" Foreground="{StaticResource MutedBrush}" />
+                    <TextBlock Text="{Binding ConnectionStatusTitle}" FontSize="16" FontWeight="Bold" Margin="0,6,0,0" Foreground="{StaticResource InkBrush}" />
+                    <TextBlock Text="{Binding TrafficModeText}" Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Button Grid.Column="6"
+                    Command="{Binding PowerCommand}"
+                    Background="{Binding PowerButtonColor}"
+                    BorderBrush="{Binding PowerButtonColor}"
+                    Foreground="White"
+                    FontSize="42"
+                    FontWeight="Bold"
+                    Content="⏻"
+                    ToolTip="Подключить или отключить VPN" />
+        </Grid>
+
+        <TabControl Grid.Row="2" Background="Transparent" BorderBrush="{StaticResource LineBrush}">
+            <TabItem Header="Главная">
+                <Grid Margin="0,18,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3*" />
+                        <ColumnDefinition Width="18" />
+                        <ColumnDefinition Width="2*" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="20" Margin="0,0,0,14">
+                            <StackPanel>
+                                <TextBlock Text="Telegram-авторизация" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
+                                <TextBlock Text="{Binding AuthStatus}" Margin="0,10,0,14" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="Получить код" Command="{Binding GenerateLoginCodeCommand}" Margin="12,0,0,0" />
+                                    <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="14,9">
+                                        <TextBlock Text="{Binding LoginCode}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
+                                    </Border>
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="20">
+                            <StackPanel>
+                                <TextBlock Text="Подписка" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
+                                <TextBox Margin="0,12,0,12" Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" ToolTip="Ссылка вида https://ваш-домен/sub/идентификатор" />
+                                <WrapPanel Margin="0,0,0,12">
+                                    <Button Content="Обновить" Command="{Binding RefreshCommand}" Margin="0,0,8,0" />
+                                    <Button Content="Сохранить" Command="{Binding SaveCommand}" Margin="0,0,8,0" />
+                                    <Button Content="Папка данных" Command="{Binding OpenDataFolderCommand}" />
+                                </WrapPanel>
+                                <Expander Header="Детали подписки" IsExpanded="False">
+                                    <StackPanel Margin="0,12,0,0">
+                                        <TextBlock Foreground="{StaticResource MutedBrush}">
+                                            <Run Text="Последнее обновление: " /><Run Text="{Binding LastRefreshText}" />
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding CurrentServerText}" FontWeight="SemiBold" Margin="0,8,0,8" Foreground="{StaticResource InkBrush}" />
+                                        <ListBox ItemsSource="{Binding Profiles}" MinHeight="140" MaxHeight="220" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="8">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                                            <TextBlock Foreground="{StaticResource MutedBrush}" Margin="0,3,0,0">
+                                                                <Run Text="{Binding Network}" /><Run Text=" / " /><Run Text="{Binding Security}" />
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Protocol}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <Border Grid.Column="2" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="20">
                         <StackPanel>
-                            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{StaticResource InkBrush}" />
-                            <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}">
-                                <Run Text="Последнее обновление: " /><Run Text="{Binding LastRefresh}" />
-                            </TextBlock>
+                            <TextBlock Text="Подключение" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
+                            <TextBlock Text="{Binding ConnectionStateText}" FontSize="22" FontWeight="Bold" Margin="0,16,0,6" Foreground="{StaticResource InkBrush}" />
+                            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                            <Separator Margin="0,18,0,18" />
+                            <TextBlock Text="Текущий сервер" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding CurrentServerText}" FontWeight="SemiBold" Margin="0,6,0,16" TextWrapping="Wrap" Foreground="{StaticResource InkBrush}" />
+                            <TextBlock Text="Маршрутизация" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding TrafficModeText}" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{StaticResource InkBrush}" />
                         </StackPanel>
                     </Border>
-                    <CheckBox Content="TUN-режим для всего трафика" IsChecked="{Binding UseTunMode}" Margin="0,0,0,10" />
-                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,22" Text="Если TUN выключен, приложение поднимет локальный mixed proxy на 127.0.0.1:20808." />
-                    <Button Content="Подключить" Command="{Binding ConnectCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,0,10" />
-                    <Button Content="Отключить" Command="{Binding DisconnectCommand}" />
-                </StackPanel>
-            </Border>
-        </Grid>
-        <TextBlock Grid.Row="2" Margin="0,18,0,0" Foreground="{StaticResource MutedBrush}" Text="MVP: подписка -> sing-box config -> запуск локального ядра. Следующий слой: установщик, tray, автообновление ядра и системный proxy fallback." />
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Приложения">
+                <Grid Margin="0,18,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="320" />
+                        <ColumnDefinition Width="18" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="20">
+                        <StackPanel>
+                            <TextBlock Text="Режим трафика" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
+                            <RadioButton Content="Весь трафик через VPN" IsChecked="{Binding IsAllTrafficMode}" Margin="0,18,0,8" />
+                            <RadioButton Content="Только выбранные приложения" IsChecked="{Binding IsSelectedAppsMode}" Margin="0,0,0,18" />
+                            <TextBlock Text="В режиме выбранных приложений sing-box строит правила по имени процесса. Остальные приложения идут напрямую через обычную сеть." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                            <Button Content="Сохранить" Command="{Binding SaveCommand}" Margin="0,18,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="2" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="20">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <DockPanel LastChildFill="True" Margin="0,0,0,14">
+                                <Button DockPanel.Dock="Right" Content="Обновить список" Command="{Binding LoadApplicationsCommand}" />
+                                <StackPanel>
+                                    <TextBlock Text="Приложения для VPN" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
+                                    <TextBlock Text="Отметьте браузер, Discord или другие программы, которые должны идти через VPN." Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" />
+                                </StackPanel>
+                            </DockPanel>
+                            <ListBox Grid.Row="1" ItemsSource="{Binding AvailableApplications}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Margin="8,6">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" Foreground="{StaticResource InkBrush}" />
+                                                <TextBlock Text="{Binding RouteLabel}" Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </CheckBox>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Инструкции">
+                <ScrollViewer Margin="0,18,0,0" VerticalScrollBarVisibility="Auto">
+                    <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="22">
+                        <StackPanel>
+                            <TextBlock Text="Быстрый старт" FontSize="20" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
+                            <TextBlock Text="1. Получите код Telegram-авторизации и подтвердите вход в боте." Margin="0,16,0,0" Foreground="{StaticResource InkBrush}" />
+                            <TextBlock Text="2. Обновите подписку, чтобы приложение увидело доступные профили CosmoNet." Margin="0,8,0,0" Foreground="{StaticResource InkBrush}" />
+                            <TextBlock Text="3. Выберите режим трафика: все приложения или только отмеченные программы." Margin="0,8,0,0" Foreground="{StaticResource InkBrush}" />
+                            <TextBlock Text="4. Нажмите кнопку питания. Серый цвет означает выключено, синий - подключение, зеленый - подключено." Margin="0,8,0,0" Foreground="{StaticResource InkBrush}" />
+
+                            <Separator Margin="0,22,0,22" />
+                            <TextBlock Text="Важно для стабильной работы" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
+                            <TextBlock Text="Для TUN-режима Windows должен запускать приложение от имени администратора. В релизном установщике мы оформим это нормально, чтобы пользователь не занимался ручной настройкой." Margin="0,12,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="Ядро sing-box не хранится в репозитории. Его нужно положить в Resources\sing-box\sing-box.exe при локальной проверке или добавить на этапе упаковки установщика." Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="Ссылки подписки и выбранные приложения сохраняются только локально в %AppData%\CosmoNet. В GitHub такие данные не коммитятся." Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                    </Border>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <TextBlock Grid.Row="3" Margin="0,16,0,0" Foreground="{StaticResource MutedBrush}" Text="Стадия: UX-каркас авторизации, подписки, power-подключения и split tunneling. Следующий слой: серверная Telegram-авторизация и проверка реального sing-box ядра." />
     </Grid>
 </Window>

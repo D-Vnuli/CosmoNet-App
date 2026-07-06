@@ -3,7 +3,8 @@
 public sealed class AppSettings
 {
     public string SubscriptionUrl { get; set; } = "";
-    public bool UseTunMode { get; set; } = true;
+    public TrafficMode TrafficMode { get; set; } = TrafficMode.AllTraffic;
     public bool StartMinimized { get; set; }
     public DateTimeOffset? LastSubscriptionRefresh { get; set; }
+    public List<string> SelectedProcessNames { get; set; } = [];
 }

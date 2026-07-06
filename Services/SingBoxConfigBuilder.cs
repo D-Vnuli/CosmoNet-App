@@ -12,12 +12,18 @@ public sealed class SingBoxConfigBuilder
 
     public async Task<string> WriteConfigAsync(
         IReadOnlyList<VpnProfile> profiles,
-        bool useTunMode,
+        TrafficMode trafficMode,
+        IReadOnlyList<string> selectedProcessNames,
         CancellationToken cancellationToken = default)
     {
         if (profiles.Count == 0)
         {
             throw new InvalidOperationException("Сначала обновите подписку.");
+        }
+
+        if (trafficMode == TrafficMode.SelectedApps && selectedProcessNames.Count == 0)
+        {
+            throw new InvalidOperationException("Выберите приложения, которые должны работать через VPN.");
         }
 
         AppPaths.EnsureDataDirectory();
@@ -32,22 +38,10 @@ public sealed class SingBoxConfigBuilder
         var config = new Dictionary<string, object?>
         {
             ["log"] = new Dictionary<string, object?> { ["level"] = "info", ["timestamp"] = true },
-            ["dns"] = new Dictionary<string, object?>
-            {
-                ["servers"] = new object[]
-                {
-                    new Dictionary<string, object?> { ["tag"] = "cloudflare", ["address"] = "https://1.1.1.1/dns-query" },
-                    new Dictionary<string, object?> { ["tag"] = "google", ["address"] = "https://8.8.8.8/dns-query" }
-                },
-                ["final"] = "cloudflare"
-            },
-            ["inbounds"] = new object[] { BuildInbound(useTunMode) },
+            ["dns"] = BuildDns(),
+            ["inbounds"] = new object[] { BuildTunInbound() },
             ["outbounds"] = outbounds,
-            ["route"] = new Dictionary<string, object?>
-            {
-                ["auto_detect_interface"] = true,
-                ["final"] = "profile-0"
-            }
+            ["route"] = BuildRoute(trafficMode, selectedProcessNames)
         };
 
         await using var stream = File.Create(AppPaths.GeneratedConfigPath);
@@ -55,19 +49,21 @@ public sealed class SingBoxConfigBuilder
         return AppPaths.GeneratedConfigPath;
     }
 
-    private static Dictionary<string, object?> BuildInbound(bool useTunMode)
+    private static Dictionary<string, object?> BuildDns()
     {
-        if (!useTunMode)
+        return new Dictionary<string, object?>
         {
-            return new Dictionary<string, object?>
+            ["servers"] = new object[]
             {
-                ["type"] = "mixed",
-                ["tag"] = "mixed-in",
-                ["listen"] = "127.0.0.1",
-                ["listen_port"] = 20808
-            };
-        }
+                new Dictionary<string, object?> { ["tag"] = "cloudflare", ["address"] = "https://1.1.1.1/dns-query" },
+                new Dictionary<string, object?> { ["tag"] = "google", ["address"] = "https://8.8.8.8/dns-query" }
+            },
+            ["final"] = "cloudflare"
+        };
+    }
 
+    private static Dictionary<string, object?> BuildTunInbound()
+    {
         return new Dictionary<string, object?>
         {
             ["type"] = "tun",
@@ -78,6 +74,35 @@ public sealed class SingBoxConfigBuilder
             ["strict_route"] = true,
             ["stack"] = "system"
         };
+    }
+
+    private static Dictionary<string, object?> BuildRoute(
+        TrafficMode trafficMode,
+        IReadOnlyList<string> selectedProcessNames)
+    {
+        var route = new Dictionary<string, object?>
+        {
+            ["auto_detect_interface"] = true,
+            ["final"] = trafficMode == TrafficMode.AllTraffic ? "profile-0" : "direct"
+        };
+
+        if (trafficMode == TrafficMode.SelectedApps)
+        {
+            route["rules"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["process_name"] = selectedProcessNames
+                        .Where(name => !string.IsNullOrWhiteSpace(name))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                        .ToArray(),
+                    ["outbound"] = "profile-0"
+                }
+            };
+        }
+
+        return route;
     }
 
     private static Dictionary<string, object?> BuildOutbound(VpnProfile profile, int index)

@@ -2,6 +2,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Windows.Input;
 using CosmoNet.App.Models;
 using CosmoNet.App.Services;
@@ -14,32 +15,40 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SubscriptionService _subscriptionService = new();
     private readonly SingBoxConfigBuilder _configBuilder = new();
     private readonly SingBoxService _singBoxService = new();
+    private readonly InstalledApplicationsService _applicationsService = new();
 
     private string _subscriptionUrl = "";
     private string _statusText = "Готов к настройке";
+    private string _authStatus = "Войдите через Telegram, чтобы приложение могло получить вашу подписку.";
+    private string _loginCode = "------";
     private bool _isBusy;
     private bool _isConnected;
-    private bool _useTunMode = true;
+    private TrafficMode _trafficMode = TrafficMode.AllTraffic;
     private DateTimeOffset? _lastRefresh;
 
     public MainViewModel()
     {
         RefreshCommand = new RelayCommand(RefreshAsync, () => !IsBusy && !IsConnected);
-        ConnectCommand = new RelayCommand(ConnectAsync, () => !IsBusy && !IsConnected);
+        PowerCommand = new RelayCommand(ToggleConnectionAsync);
         DisconnectCommand = new RelayCommand(DisconnectAsync, () => !IsBusy && IsConnected);
         SaveCommand = new RelayCommand(SaveAsync, () => !IsBusy);
         OpenDataFolderCommand = new RelayCommand(OpenDataFolderAsync);
+        LoadApplicationsCommand = new RelayCommand(LoadApplicationsAsync, () => !IsBusy);
+        GenerateLoginCodeCommand = new RelayCommand(GenerateLoginCodeAsync, () => !IsBusy);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<VpnProfile> Profiles { get; } = new();
+    public ObservableCollection<InstalledApplication> AvailableApplications { get; } = new();
 
     public ICommand RefreshCommand { get; }
-    public ICommand ConnectCommand { get; }
+    public ICommand PowerCommand { get; }
     public ICommand DisconnectCommand { get; }
     public ICommand SaveCommand { get; }
     public ICommand OpenDataFolderCommand { get; }
+    public ICommand LoadApplicationsCommand { get; }
+    public ICommand GenerateLoginCodeCommand { get; }
 
     public string SubscriptionUrl
     {
@@ -53,6 +62,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         set => SetField(ref _statusText, value);
     }
 
+    public string AuthStatus
+    {
+        get => _authStatus;
+        set => SetField(ref _authStatus, value);
+    }
+
+    public string LoginCode
+    {
+        get => _loginCode;
+        set => SetField(ref _loginCode, value);
+    }
+
     public bool IsBusy
     {
         get => _isBusy;
@@ -61,6 +82,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (SetField(ref _isBusy, value))
             {
                 RaiseCommandStates();
+                OnPropertyChanged(nameof(PowerButtonColor));
+                OnPropertyChanged(nameof(ConnectionStateText));
             }
         }
     }
@@ -73,20 +96,61 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (SetField(ref _isConnected, value))
             {
                 RaiseCommandStates();
+                OnPropertyChanged(nameof(PowerButtonColor));
+                OnPropertyChanged(nameof(ConnectionStateText));
+                OnPropertyChanged(nameof(ConnectionStatusTitle));
             }
         }
     }
 
-    public bool UseTunMode
+    public TrafficMode TrafficMode
     {
-        get => _useTunMode;
-        set => SetField(ref _useTunMode, value);
+        get => _trafficMode;
+        set
+        {
+            if (SetField(ref _trafficMode, value))
+            {
+                OnPropertyChanged(nameof(IsAllTrafficMode));
+                OnPropertyChanged(nameof(IsSelectedAppsMode));
+                OnPropertyChanged(nameof(TrafficModeText));
+            }
+        }
+    }
+
+    public bool IsAllTrafficMode
+    {
+        get => TrafficMode == TrafficMode.AllTraffic;
+        set
+        {
+            if (value)
+            {
+                TrafficMode = TrafficMode.AllTraffic;
+            }
+        }
+    }
+
+    public bool IsSelectedAppsMode
+    {
+        get => TrafficMode == TrafficMode.SelectedApps;
+        set
+        {
+            if (value)
+            {
+                TrafficMode = TrafficMode.SelectedApps;
+            }
+        }
     }
 
     public DateTimeOffset? LastRefresh
     {
         get => _lastRefresh;
-        set => SetField(ref _lastRefresh, value);
+        set
+        {
+            if (SetField(ref _lastRefresh, value))
+            {
+                OnPropertyChanged(nameof(LastRefreshText));
+            }
+        }
     }
 
     public string CoreStatus => _singBoxService.IsCoreAvailable
@@ -95,16 +159,58 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string AdminStatus => _singBoxService.IsAdministrator
         ? "Запущено с правами администратора"
-        : "TUN потребует запуск от администратора";
+        : "Для подключения нужен запуск от администратора";
+
+    public string SubscriptionExpiresText => "Будет получен после Telegram-авторизации";
+
+    public string ServerStatusText => Profiles.Count > 0
+        ? $"Доступно профилей: {Profiles.Count}"
+        : "Ожидает подписку";
+
+    public string CurrentServerText => Profiles.FirstOrDefault()?.DisplayName ?? "Сервер не выбран";
+
+    public string ConnectionStatusTitle => IsConnected ? "Подключено" : "Не подключено";
+
+    public string ConnectionStateText => IsBusy
+        ? "Идет подключение"
+        : IsConnected
+            ? "VPN активен"
+            : "VPN выключен";
+
+    public string PowerButtonColor => IsBusy
+        ? "#2F80ED"
+        : IsConnected
+            ? "#18A07A"
+            : "#8B96A8";
+
+    public string TrafficModeText => TrafficMode == TrafficMode.AllTraffic
+        ? "Весь трафик через VPN"
+        : "Через VPN только выбранные приложения";
+
+    public string LastRefreshText => LastRefresh?.ToString("dd.MM.yyyy HH:mm") ?? "Еще не обновлялась";
 
     public async Task InitializeAsync()
     {
         var settings = await _settingsStore.LoadAsync();
         SubscriptionUrl = settings.SubscriptionUrl;
-        UseTunMode = settings.UseTunMode;
+        TrafficMode = settings.TrafficMode;
         LastRefresh = settings.LastSubscriptionRefresh;
+        await LoadApplicationsAsync(settings.SelectedProcessNames);
+
         OnPropertyChanged(nameof(CoreStatus));
         OnPropertyChanged(nameof(AdminStatus));
+        RefreshDerivedStatus();
+    }
+
+    private async Task GenerateLoginCodeAsync()
+    {
+        await RunBusyAsync(() =>
+        {
+            LoginCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+            AuthStatus = "Отправьте этот код нашему Telegram-боту. После серверной части здесь появится подтверждение входа.";
+            StatusText = "Код Telegram-авторизации создан";
+            return Task.CompletedTask;
+        });
     }
 
     private async Task RefreshAsync()
@@ -115,9 +221,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var profiles = await _subscriptionService.LoadProfilesAsync(SubscriptionUrl);
             ReplaceProfiles(profiles);
             LastRefresh = DateTimeOffset.Now;
-            await SaveAsync();
+            await SaveAsync(setStatus: false);
             StatusText = $"Подписка обновлена: профилей {Profiles.Count}";
+            RefreshDerivedStatus();
         });
+    }
+
+    private async Task ToggleConnectionAsync()
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        if (IsConnected)
+        {
+            await DisconnectAsync();
+            return;
+        }
+
+        await ConnectAsync();
     }
 
     private async Task ConnectAsync()
@@ -130,13 +253,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 ReplaceProfiles(await _subscriptionService.LoadProfilesAsync(SubscriptionUrl));
             }
 
+            var selectedProcesses = GetSelectedProcessNames();
             StatusText = "Готовим конфиг...";
-            var configPath = await _configBuilder.WriteConfigAsync(Profiles, UseTunMode);
-            _singBoxService.Start(configPath, UseTunMode);
+            var configPath = await _configBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses);
+            _singBoxService.Start(configPath, useTunMode: true);
             IsConnected = true;
-            StatusText = UseTunMode
-                ? "Подключено через TUN"
-                : "Локальный proxy запущен на 127.0.0.1:20808";
+            LastRefresh ??= DateTimeOffset.Now;
+            await SaveAsync(setStatus: false);
+            StatusText = TrafficMode == TrafficMode.AllTraffic
+                ? "Подключено: весь трафик идет через VPN"
+                : $"Подключено: приложений через VPN {selectedProcesses.Count}";
+            RefreshDerivedStatus();
         });
     }
 
@@ -145,19 +272,51 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _singBoxService.Stop();
         IsConnected = false;
         StatusText = "Отключено";
+        RefreshDerivedStatus();
         return Task.CompletedTask;
     }
 
-    private async Task SaveAsync()
+    private Task LoadApplicationsAsync()
+    {
+        return LoadApplicationsAsync(GetSelectedProcessNames());
+    }
+
+    private async Task LoadApplicationsAsync(IEnumerable<string> selectedProcessNames)
+    {
+        await RunBusyAsync(async () =>
+        {
+            StatusText = "Обновляем список приложений...";
+            var apps = await _applicationsService.LoadApplicationsAsync(selectedProcessNames);
+            AvailableApplications.Clear();
+
+            foreach (var app in apps)
+            {
+                AvailableApplications.Add(app);
+            }
+
+            StatusText = $"Найдено приложений: {AvailableApplications.Count}";
+        });
+    }
+
+    private Task SaveAsync()
+    {
+        return SaveAsync(setStatus: true);
+    }
+
+    private async Task SaveAsync(bool setStatus)
     {
         await _settingsStore.SaveAsync(new AppSettings
         {
             SubscriptionUrl = SubscriptionUrl.Trim(),
-            UseTunMode = UseTunMode,
-            LastSubscriptionRefresh = LastRefresh
+            TrafficMode = TrafficMode,
+            LastSubscriptionRefresh = LastRefresh,
+            SelectedProcessNames = GetSelectedProcessNames().ToList()
         });
 
-        StatusText = "Настройки сохранены";
+        if (setStatus)
+        {
+            StatusText = "Настройки сохранены";
+        }
     }
 
     private Task OpenDataFolderAsync()
@@ -170,6 +329,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
         });
 
         return Task.CompletedTask;
+    }
+
+    private List<string> GetSelectedProcessNames()
+    {
+        return AvailableApplications
+            .Where(app => app.IsSelected)
+            .Select(app => app.ProcessName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private void ReplaceProfiles(IEnumerable<VpnProfile> profiles)
@@ -198,12 +368,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    private void RefreshDerivedStatus()
+    {
+        OnPropertyChanged(nameof(ServerStatusText));
+        OnPropertyChanged(nameof(CurrentServerText));
+        OnPropertyChanged(nameof(ConnectionStatusTitle));
+        OnPropertyChanged(nameof(ConnectionStateText));
+        OnPropertyChanged(nameof(PowerButtonColor));
+        OnPropertyChanged(nameof(TrafficModeText));
+    }
+
     private void RaiseCommandStates()
     {
         ((RelayCommand)RefreshCommand).RaiseCanExecuteChanged();
-        ((RelayCommand)ConnectCommand).RaiseCanExecuteChanged();
         ((RelayCommand)DisconnectCommand).RaiseCanExecuteChanged();
         ((RelayCommand)SaveCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)LoadApplicationsCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)GenerateLoginCodeCommand).RaiseCanExecuteChanged();
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
