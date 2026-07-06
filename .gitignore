@@ -1,0 +1,4 @@
+﻿bin/
+obj/
+Resources/sing-box/*.exe
+Resources/sing-box/*.dll

@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+
+  <ItemGroup>
+    <None Include="Resources\sing-box\sing-box.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Resources\sing-box\sing-box.exe')" />
+  </ItemGroup>
+
+</Project>
+
+
