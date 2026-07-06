@@ -24,6 +24,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _manualProcessName = "";
     private string _diagnosticText = "Диагностика еще не запускалась.";
     private string _lastConfigPath = AppPaths.GeneratedConfigPath;
+    private AccountSession _accountSession = new();
     private bool _isBusy;
     private bool _isConnected;
     private TrafficMode _trafficMode = TrafficMode.AllTraffic;
@@ -100,6 +101,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public string SecretStorageText => $"Секреты: {AppPaths.SecretSettingsPath}";
+
+    public AccountSession AccountSession
+    {
+        get => _accountSession;
+        set
+        {
+            if (SetField(ref _accountSession, value))
+            {
+                RefreshSubscriptionStatus();
+            }
+        }
+    }
+
+    public SubscriptionSummary Subscription => AccountSession.Subscription ?? SubscriptionSummary.Empty;
+
+    public string AccountDisplayText => AccountSession.IsAuthorized
+        ? AccountSession.DisplayName
+        : "Telegram не подключен";
 
     public bool IsBusy
     {
@@ -188,7 +207,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ? "Запущено с правами администратора"
         : "Для подключения нужен запуск от администратора";
 
-    public string SubscriptionExpiresText => "Будет получен после Telegram-авторизации";
+    public string SubscriptionExpiresText => Subscription.ExpiresAt is null
+        ? "Ожидает Telegram"
+        : Subscription.ExpiresAt.Value.ToLocalTime().ToString("dd.MM.yyyy");
+
+    public string SubscriptionStatusText => Subscription.Status switch
+    {
+        SubscriptionStatus.Active => "Активна",
+        SubscriptionStatus.ExpiringSoon => "Скоро закончится",
+        SubscriptionStatus.Expired => "Истекла",
+        SubscriptionStatus.Disabled => "Отключена",
+        _ => "Ожидает данные"
+    };
+
+    public string SubscriptionTariffText => string.IsNullOrWhiteSpace(Subscription.TariffName)
+        ? "Тариф неизвестен"
+        : Subscription.TariffName;
+
+    public string SubscriptionDevicesText => Subscription.DeviceLimit > 0
+        ? $"Устройств: до {Subscription.DeviceLimit}"
+        : "Лимит устройств появится после синхронизации";
+
+    public string SubscriptionTrafficText => Subscription.TrafficLimitBytes > 0
+        ? $"Трафик: {FormatBytes(Subscription.TrafficUsedBytes)} / {FormatBytes(Subscription.TrafficLimitBytes)}"
+        : $"Использовано: {FormatBytes(Subscription.TrafficUsedBytes)}";
+
+    public string SubscriptionLastSyncText => Subscription.LastSyncedAt is null
+        ? "Синхронизация еще не выполнялась"
+        : $"Синхронизация: {Subscription.LastSyncedAt.Value.ToLocalTime():dd.MM.yyyy HH:mm}";
 
     public string ServerStatusText => Profiles.Count > 0
         ? $"Доступно профилей: {Profiles.Count}"
@@ -222,6 +268,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         var settings = await _settingsStore.LoadAsync();
         SubscriptionUrl = settings.SubscriptionUrl;
+        AccountSession = settings.AccountSession ?? new AccountSession();
         TrafficMode = settings.TrafficMode;
         LastRefresh = settings.LastSubscriptionRefresh;
         LoadSavedApplications(settings.SelectedProcessNames);
@@ -236,7 +283,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         await RunBusyAsync(() =>
         {
             LoginCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-            AuthStatus = "Отправьте этот код нашему Telegram-боту. После серверной части здесь появится подтверждение входа.";
+            AccountSession = new AccountSession
+            {
+                IsAuthorized = false,
+                DisplayName = "Ожидает подтверждение Telegram",
+                Subscription = new SubscriptionSummary
+                {
+                    Status = SubscriptionStatus.Unknown,
+                    TariffName = "Ожидает подтверждение",
+                    LastSyncedAt = DateTimeOffset.Now
+                }
+            };
+            AuthStatus = "Отправьте этот код нашему Telegram-боту. После подтверждения приложение сможет получить подписку.";
             StatusText = "Код Telegram-авторизации создан";
             return Task.CompletedTask;
         });
@@ -405,7 +463,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             SubscriptionUrl = SubscriptionUrl.Trim(),
             TrafficMode = TrafficMode,
             LastSubscriptionRefresh = LastRefresh,
-            SelectedProcessNames = GetSelectedProcessNames().ToList()
+            SelectedProcessNames = GetSelectedProcessNames().ToList(),
+            AccountSession = AccountSession
         });
 
         if (setStatus)
@@ -526,6 +585,39 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(PowerButtonColor));
         OnPropertyChanged(nameof(TrafficModeText));
         OnPropertyChanged(nameof(SelectedApplicationsText));
+        RefreshSubscriptionStatus();
+    }
+
+    private void RefreshSubscriptionStatus()
+    {
+        OnPropertyChanged(nameof(Subscription));
+        OnPropertyChanged(nameof(AccountDisplayText));
+        OnPropertyChanged(nameof(SubscriptionExpiresText));
+        OnPropertyChanged(nameof(SubscriptionStatusText));
+        OnPropertyChanged(nameof(SubscriptionTariffText));
+        OnPropertyChanged(nameof(SubscriptionDevicesText));
+        OnPropertyChanged(nameof(SubscriptionTrafficText));
+        OnPropertyChanged(nameof(SubscriptionLastSyncText));
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return "0 Б";
+        }
+
+        string[] units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+        var value = (double)bytes;
+        var unit = 0;
+
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:0.#} {units[unit]}";
     }
 
     private void RaiseCommandStates()
@@ -556,4 +648,5 @@ public sealed class MainViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+
 

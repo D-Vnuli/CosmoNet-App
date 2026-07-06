@@ -4,13 +4,14 @@ Native Windows client for CosmoNet subscriptions. The app is built on WPF and pr
 
 ## Current Stage
 
-Stage 4: local security, split tunneling usability, and sing-box diagnostics.
+Stage 5: account/session model, subscription display, local security, split tunneling, and sing-box diagnostics.
 
 Implemented:
 
-- Main screen with fixed subscription expiry, server status, and connection state blocks.
+- Main screen with fixed subscription expiry, subscription status, server status, and connection state blocks.
 - One-click power button: gray means disconnected, blue means connecting, green means connected.
 - Telegram authorization UX placeholder with a short login code flow for the future bot confirmation API.
+- Account/session and subscription summary models for tariff, expiry date, device limit, traffic usage, and sync state.
 - Collapsible subscription details so the main screen stays compact.
 - Separate tabs for the main dashboard, app routing, and instructions.
 - Traffic mode selection: all traffic through VPN or only selected applications.
@@ -58,4 +59,5 @@ TUN mode requires running the app as administrator.
 - Subscription URLs and future auth tokens must live in the DPAPI-protected `secrets.dat`, not in `settings.json`.
 - The app stores selected process names locally; absolute app paths are only used for local display.
 - The `sing-box` binary is intentionally ignored by git and should be supplied by the installer or local developer setup.
+
 

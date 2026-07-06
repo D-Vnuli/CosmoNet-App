@@ -40,6 +40,7 @@
                 <StackPanel>
                     <TextBlock Text="Срок подписки" Foreground="{StaticResource MutedBrush}" />
                     <TextBlock Text="{Binding SubscriptionExpiresText}" FontSize="16" FontWeight="Bold" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{StaticResource InkBrush}" />
+                    <TextBlock Text="{Binding SubscriptionStatusText}" Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
 
@@ -82,7 +83,8 @@
                         <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="20" Margin="0,0,0,14">
                             <StackPanel>
                                 <TextBlock Text="Telegram-авторизация" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
-                                <TextBlock Text="{Binding AuthStatus}" Margin="0,10,0,14" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                                <TextBlock Text="{Binding AccountDisplayText}" FontWeight="SemiBold" Margin="0,10,0,4" Foreground="{StaticResource InkBrush}" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding AuthStatus}" Margin="0,0,0,14" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
                                 <DockPanel LastChildFill="True">
                                     <Button DockPanel.Dock="Right" Content="Получить код" Command="{Binding GenerateLoginCodeCommand}" Margin="12,0,0,0" />
                                     <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="14,9">
@@ -103,8 +105,12 @@
                                 </WrapPanel>
                                 <Expander Header="Детали подписки" IsExpanded="False">
                                     <StackPanel Margin="0,12,0,0">
+                                        <TextBlock Text="{Binding SubscriptionTariffText}" FontWeight="SemiBold" Foreground="{StaticResource InkBrush}" />
+                                        <TextBlock Text="{Binding SubscriptionDevicesText}" Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" />
+                                        <TextBlock Text="{Binding SubscriptionTrafficText}" Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" />
+                                        <TextBlock Text="{Binding SubscriptionLastSyncText}" Margin="0,4,0,10" Foreground="{StaticResource MutedBrush}" />
                                         <TextBlock Foreground="{StaticResource MutedBrush}">
-                                            <Run Text="Последнее обновление: " /><Run Text="{Binding LastRefreshText}" />
+                                            <Run Text="Последнее обновление профилей: " /><Run Text="{Binding LastRefreshText}" />
                                         </TextBlock>
                                         <TextBlock Text="{Binding CurrentServerText}" FontWeight="SemiBold" Margin="0,8,0,8" Foreground="{StaticResource InkBrush}" />
                                         <ListBox ItemsSource="{Binding Profiles}" MinHeight="140" MaxHeight="220" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
@@ -253,8 +259,9 @@
             </TabItem>
         </TabControl>
 
-        <TextBlock Grid.Row="3" Margin="0,16,0,0" Foreground="{StaticResource MutedBrush}" Text="Стадия: защищенное хранение, UX авторизации, power-подключение, split tunneling и диагностика sing-box. Следующий слой: серверная Telegram-авторизация и runtime-проверка реального VPN." />
+        <TextBlock Grid.Row="3" Margin="0,16,0,0" Foreground="{StaticResource MutedBrush}" Text="Стадия: защищенное хранение, UX авторизации, модель подписки, power-подключение, split tunneling и диагностика sing-box. Следующий слой: серверная Telegram-авторизация и runtime-проверка реального VPN." />
     </Grid>
 </Window>
+
 
 
