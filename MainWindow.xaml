@@ -201,6 +201,37 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="Диагностика">
+                <Grid Margin="0,18,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="20" Margin="0,0,0,14">
+                        <DockPanel LastChildFill="True">
+                            <Button DockPanel.Dock="Right" Content="Проверить" Command="{Binding RunDiagnosticsCommand}" />
+                            <StackPanel>
+                                <TextBlock Text="Диагностика VPN" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
+                                <TextBlock Text="Проверка ядра, прав администратора и сгенерированного sing-box конфига перед подключением." Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Grid.Row="1" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="20">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="{Binding LastConfigPath}" FontWeight="SemiBold" Foreground="{StaticResource InkBrush}" TextWrapping="Wrap" />
+                            <TextBlock Grid.Row="1" Text="{Binding SecretStorageText}" Margin="0,8,0,14" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            <TextBox Grid.Row="2" Text="{Binding DiagnosticText}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="13" BorderBrush="{StaticResource LineBrush}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
             <TabItem Header="Инструкции">
                 <ScrollViewer Margin="0,18,0,0" VerticalScrollBarVisibility="Auto">
                     <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="22">
@@ -222,7 +253,8 @@
             </TabItem>
         </TabControl>
 
-        <TextBlock Grid.Row="3" Margin="0,16,0,0" Foreground="{StaticResource MutedBrush}" Text="Стадия: защищенное локальное хранение настроек, UX авторизации, power-подключение и split tunneling. Следующий слой: серверная Telegram-авторизация и проверка реального sing-box ядра." />
+        <TextBlock Grid.Row="3" Margin="0,16,0,0" Foreground="{StaticResource MutedBrush}" Text="Стадия: защищенное хранение, UX авторизации, power-подключение, split tunneling и диагностика sing-box. Следующий слой: серверная Telegram-авторизация и runtime-проверка реального VPN." />
     </Grid>
 </Window>
+
 

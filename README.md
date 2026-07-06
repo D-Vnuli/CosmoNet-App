@@ -4,7 +4,7 @@ Native Windows client for CosmoNet subscriptions. The app is built on WPF and pr
 
 ## Current Stage
 
-Stage 3: local security hardening and split tunneling usability.
+Stage 4: local security, split tunneling usability, and sing-box diagnostics.
 
 Implemented:
 
@@ -18,6 +18,8 @@ Implemented:
 - Manual process entry for apps that are not found automatically, for example `discord.exe` or `chrome.exe`.
 - Lazy app loading: saved selected processes appear instantly, full app scan runs only when requested.
 - `sing-box` route generation for selected applications using `process_name` rules.
+- A diagnostics tab for checking core availability, admin rights, generated config path, protected storage path, and `sing-box check -c` output.
+- Connection startup validates the generated config with `sing-box check -c` before running the VPN core.
 - Subscription URL is stored outside public settings in a Windows DPAPI-protected local file.
 - Public settings stay in `%AppData%\CosmoNet\settings.json`; protected secrets stay in `%AppData%\CosmoNet\secrets.dat`.
 
@@ -27,6 +29,7 @@ Not implemented yet:
 - Real subscription metadata API for expiry date and user plan details.
 - Bundled installer and automatic `sing-box` core delivery.
 - End-to-end runtime validation with a real CosmoNet server profile.
+- In-app live traffic counters and process-level routing verification.
 
 ## Local Development
 
@@ -55,3 +58,4 @@ TUN mode requires running the app as administrator.
 - Subscription URLs and future auth tokens must live in the DPAPI-protected `secrets.dat`, not in `settings.json`.
 - The app stores selected process names locally; absolute app paths are only used for local display.
 - The `sing-box` binary is intentionally ignored by git and should be supplied by the installer or local developer setup.
+

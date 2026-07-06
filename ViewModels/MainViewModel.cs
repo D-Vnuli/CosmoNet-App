@@ -22,6 +22,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _authStatus = "Войдите через Telegram, чтобы приложение могло получить вашу подписку.";
     private string _loginCode = "------";
     private string _manualProcessName = "";
+    private string _diagnosticText = "Диагностика еще не запускалась.";
+    private string _lastConfigPath = AppPaths.GeneratedConfigPath;
     private bool _isBusy;
     private bool _isConnected;
     private TrafficMode _trafficMode = TrafficMode.AllTraffic;
@@ -37,6 +39,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         LoadApplicationsCommand = new RelayCommand(LoadApplicationsAsync, () => !IsBusy);
         AddManualApplicationCommand = new RelayCommand(AddManualApplicationAsync, () => !IsBusy);
         GenerateLoginCodeCommand = new RelayCommand(GenerateLoginCodeAsync, () => !IsBusy);
+        RunDiagnosticsCommand = new RelayCommand(RunDiagnosticsAsync, () => !IsBusy);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -52,6 +55,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand LoadApplicationsCommand { get; }
     public ICommand AddManualApplicationCommand { get; }
     public ICommand GenerateLoginCodeCommand { get; }
+    public ICommand RunDiagnosticsCommand { get; }
 
     public string SubscriptionUrl
     {
@@ -82,6 +86,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => _manualProcessName;
         set => SetField(ref _manualProcessName, value);
     }
+
+    public string DiagnosticText
+    {
+        get => _diagnosticText;
+        set => SetField(ref _diagnosticText, value);
+    }
+
+    public string LastConfigPath
+    {
+        get => _lastConfigPath;
+        set => SetField(ref _lastConfigPath, value);
+    }
+
+    public string SecretStorageText => $"Секреты: {AppPaths.SecretSettingsPath}";
 
     public bool IsBusy
     {
@@ -267,6 +285,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var selectedProcesses = GetSelectedProcessNames();
             StatusText = "Готовим конфиг...";
             var configPath = await _configBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses);
+            LastConfigPath = configPath;
+            StatusText = "Проверяем конфиг sing-box...";
+            var diagnostic = await _singBoxService.CheckConfigAsync(configPath);
+            ApplyDiagnosticResult(diagnostic);
+            if (!diagnostic.Success)
+            {
+                throw new InvalidOperationException(diagnostic.Message);
+            }
+
             _singBoxService.Start(configPath, useTunMode: true);
             IsConnected = true;
             LastRefresh ??= DateTimeOffset.Now;
@@ -307,6 +334,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
             StatusText = $"Найдено приложений: {AvailableApplications.Count}";
             OnPropertyChanged(nameof(SelectedApplicationsText));
+        });
+    }
+
+    private async Task RunDiagnosticsAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            if (Profiles.Count == 0)
+            {
+                StatusText = "Для полной проверки сначала обновите подписку.";
+                DiagnosticText = BuildBasicDiagnostic("Профили подписки пока не загружены.");
+                return;
+            }
+
+            var selectedProcesses = GetSelectedProcessNames();
+            StatusText = "Генерируем и проверяем конфиг...";
+            var configPath = await _configBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses);
+            LastConfigPath = configPath;
+            var diagnostic = await _singBoxService.CheckConfigAsync(configPath);
+            ApplyDiagnosticResult(diagnostic);
+            StatusText = diagnostic.Message;
         });
     }
 
@@ -448,6 +496,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    private void ApplyDiagnosticResult(CoreDiagnosticResult result)
+    {
+        DiagnosticText = string.IsNullOrWhiteSpace(result.Details)
+            ? BuildBasicDiagnostic(result.Message)
+            : $"{BuildBasicDiagnostic(result.Message)}{Environment.NewLine}{Environment.NewLine}{result.Details}";
+    }
+
+    private string BuildBasicDiagnostic(string headline)
+    {
+        return string.Join(Environment.NewLine,
+        [
+            headline,
+            $"Ядро: {AppPaths.BundledSingBoxPath}",
+            $"Конфиг: {LastConfigPath}",
+            $"Администратор: {(_singBoxService.IsAdministrator ? "да" : "нет")}",
+            $"Хранилище секретов: {AppPaths.SecretSettingsPath}",
+            $"Режим трафика: {TrafficModeText}",
+            SelectedApplicationsText
+        ]);
+    }
+
     private void RefreshDerivedStatus()
     {
         OnPropertyChanged(nameof(ServerStatusText));
@@ -467,6 +536,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ((RelayCommand)LoadApplicationsCommand).RaiseCanExecuteChanged();
         ((RelayCommand)AddManualApplicationCommand).RaiseCanExecuteChanged();
         ((RelayCommand)GenerateLoginCodeCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)RunDiagnosticsCommand).RaiseCanExecuteChanged();
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
@@ -486,3 +556,4 @@ public sealed class MainViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+
