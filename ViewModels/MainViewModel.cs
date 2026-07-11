@@ -305,8 +305,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         await RunBusyAsync(async () =>
         {
             StatusText = "Обновляем подписку...";
-            var profiles = await _subscriptionService.LoadProfilesAsync(SubscriptionUrl);
-            ReplaceProfiles(profiles);
+            var subscription = await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl);
+            ApplySubscription(subscription);
             LastRefresh = DateTimeOffset.Now;
             await SaveAsync(setStatus: false);
             StatusText = $"Подписка обновлена: профилей {Profiles.Count}";
@@ -337,7 +337,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (Profiles.Count == 0)
             {
                 StatusText = "Загружаем подписку...";
-                ReplaceProfiles(await _subscriptionService.LoadProfilesAsync(SubscriptionUrl));
+                ApplySubscription(await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl));
             }
 
             var selectedProcesses = GetSelectedProcessNames();
@@ -529,6 +529,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
             : $"{processName}.exe";
     }
 
+    private void ApplySubscription(SubscriptionLoadResult subscription)
+    {
+        ReplaceProfiles(subscription.Profiles);
+
+        AccountSession = new AccountSession
+        {
+            IsAuthorized = AccountSession.IsAuthorized,
+            DisplayName = AccountSession.IsAuthorized ? AccountSession.DisplayName : "Подписка загружена по ссылке",
+            AuthorizedAt = AccountSession.AuthorizedAt,
+            Subscription = subscription.Summary
+        };
+    }
+
     private void ReplaceProfiles(IEnumerable<VpnProfile> profiles)
     {
         Profiles.Clear();
@@ -648,5 +661,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+
 
 

@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.Globalization;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using CosmoNet.App.Models;
@@ -16,13 +17,31 @@ public sealed class SubscriptionService
         string subscriptionUrl,
         CancellationToken cancellationToken = default)
     {
+        var result = await LoadSubscriptionAsync(subscriptionUrl, cancellationToken);
+        return result.Profiles;
+    }
+
+    public async Task<SubscriptionLoadResult> LoadSubscriptionAsync(
+        string subscriptionUrl,
+        CancellationToken cancellationToken = default)
+    {
         if (!Uri.TryCreate(subscriptionUrl.Trim(), UriKind.Absolute, out var uri))
         {
             throw new InvalidOperationException("Введите корректную ссылку подписки CosmoNet.");
         }
 
-        var raw = await _httpClient.GetStringAsync(uri, cancellationToken);
-        return ParseSubscription(raw);
+        using var response = await _httpClient.GetAsync(uri, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+        var profiles = ParseSubscription(raw);
+        var summary = ParseSubscriptionSummary(response);
+
+        return new SubscriptionLoadResult
+        {
+            Profiles = profiles,
+            Summary = summary
+        };
     }
 
     public IReadOnlyList<VpnProfile> ParseSubscription(string raw)
@@ -41,6 +60,80 @@ public sealed class SubscriptionService
         }
 
         return profiles;
+    }
+
+    private static SubscriptionSummary ParseSubscriptionSummary(HttpResponseMessage response)
+    {
+        var summary = new SubscriptionSummary
+        {
+            TariffName = ReadHeader(response, "profile-title") ?? "CosmoNet",
+            LastSyncedAt = DateTimeOffset.Now
+        };
+
+        var userInfo = ReadHeader(response, "subscription-userinfo");
+        if (string.IsNullOrWhiteSpace(userInfo))
+        {
+            return summary;
+        }
+
+        var values = userInfo
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => part.Split('=', 2, StringSplitOptions.TrimEntries))
+            .Where(parts => parts.Length == 2)
+            .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.OrdinalIgnoreCase);
+
+        var upload = ReadLong(values, "upload");
+        var download = ReadLong(values, "download");
+        var total = ReadLong(values, "total");
+        var expire = ReadLong(values, "expire");
+
+        summary.TrafficUsedBytes = Math.Max(0, upload) + Math.Max(0, download);
+        summary.TrafficLimitBytes = Math.Max(0, total);
+
+        if (expire > 0)
+        {
+            summary.ExpiresAt = DateTimeOffset.FromUnixTimeSeconds(expire);
+        }
+
+        summary.Status = ResolveStatus(summary.ExpiresAt);
+        return summary;
+    }
+
+    private static SubscriptionStatus ResolveStatus(DateTimeOffset? expiresAt)
+    {
+        if (expiresAt is null)
+        {
+            return SubscriptionStatus.Unknown;
+        }
+
+        var now = DateTimeOffset.Now;
+        if (expiresAt <= now)
+        {
+            return SubscriptionStatus.Expired;
+        }
+
+        return expiresAt <= now.AddDays(3)
+            ? SubscriptionStatus.ExpiringSoon
+            : SubscriptionStatus.Active;
+    }
+
+    private static string? ReadHeader(HttpResponseMessage response, string name)
+    {
+        if (response.Headers.TryGetValues(name, out var headerValues))
+        {
+            return WebUtility.UrlDecode(headerValues.FirstOrDefault());
+        }
+
+        return response.Content.Headers.TryGetValues(name, out var contentValues)
+            ? WebUtility.UrlDecode(contentValues.FirstOrDefault())
+            : null;
+    }
+
+    private static long ReadLong(IReadOnlyDictionary<string, string> values, string key)
+    {
+        return values.TryGetValue(key, out var value) && long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : 0;
     }
 
     private static string DecodeSubscription(string raw)
@@ -106,5 +199,3 @@ public sealed class SubscriptionService
                 StringComparer.OrdinalIgnoreCase);
     }
 }
-
-
