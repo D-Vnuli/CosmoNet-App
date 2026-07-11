@@ -13,11 +13,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly SettingsStore _settingsStore = new();
     private readonly SubscriptionService _subscriptionService = new();
+    private readonly TelegramAuthApiClient _telegramAuthApiClient = new();
+    private readonly SecretSettingsStore _secretSettingsStore = new();
     private readonly SingBoxConfigBuilder _configBuilder = new();
     private readonly SingBoxService _singBoxService = new();
     private readonly InstalledApplicationsService _applicationsService = new();
 
     private string _subscriptionUrl = "";
+    private string _authApiBaseUrl = "";
+    private string _authDeviceId = "";
     private string _statusText = "Готов к настройке";
     private string _authStatus = "Войдите через Telegram, чтобы приложение могло получить вашу подписку.";
     private string _loginCode = "------";
@@ -40,6 +44,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         LoadApplicationsCommand = new RelayCommand(LoadApplicationsAsync, () => !IsBusy);
         AddManualApplicationCommand = new RelayCommand(AddManualApplicationAsync, () => !IsBusy);
         GenerateLoginCodeCommand = new RelayCommand(GenerateLoginCodeAsync, () => !IsBusy);
+        CheckAuthStatusCommand = new RelayCommand(CheckAuthStatusAsync, () => !IsBusy);
         RunDiagnosticsCommand = new RelayCommand(RunDiagnosticsAsync, () => !IsBusy);
     }
 
@@ -56,12 +61,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand LoadApplicationsCommand { get; }
     public ICommand AddManualApplicationCommand { get; }
     public ICommand GenerateLoginCodeCommand { get; }
+    public ICommand CheckAuthStatusCommand { get; }
     public ICommand RunDiagnosticsCommand { get; }
 
     public string SubscriptionUrl
     {
         get => _subscriptionUrl;
         set => SetField(ref _subscriptionUrl, value);
+    }
+
+    public string AuthApiBaseUrl
+    {
+        get => _authApiBaseUrl;
+        set => SetField(ref _authApiBaseUrl, value);
     }
 
     public string StatusText
@@ -267,7 +279,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public async Task InitializeAsync()
     {
         var settings = await _settingsStore.LoadAsync();
+        var secrets = await _secretSettingsStore.LoadAsync();
         SubscriptionUrl = settings.SubscriptionUrl;
+        AuthApiBaseUrl = settings.AuthApiBaseUrl;
+        _authDeviceId = string.IsNullOrWhiteSpace(secrets.AuthDeviceId)
+            ? Guid.NewGuid().ToString("N")
+            : secrets.AuthDeviceId;
+        if (secrets.AuthDeviceId != _authDeviceId)
+        {
+            secrets.AuthDeviceId = _authDeviceId;
+            await _secretSettingsStore.SaveAsync(secrets);
+        }
         AccountSession = settings.AccountSession ?? new AccountSession();
         TrafficMode = settings.TrafficMode;
         LastRefresh = settings.LastSubscriptionRefresh;
@@ -280,9 +302,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task GenerateLoginCodeAsync()
     {
-        await RunBusyAsync(() =>
+        await RunBusyAsync(async () =>
         {
-            LoginCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+            if (!string.IsNullOrWhiteSpace(AuthApiBaseUrl))
+            {
+                var result = await _telegramAuthApiClient.StartAsync(AuthApiBaseUrl, _authDeviceId);
+                LoginCode = result.LoginCode;
+                AuthStatus = string.IsNullOrWhiteSpace(result.Message)
+                    ? $"Подтвердите вход в Telegram-боте. Код действует до {result.ExpiresAt.ToLocalTime():HH:mm}."
+                    : result.Message;
+            }
+            else
+            {
+                LoginCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+                AuthStatus = "Backend URL не задан. Это локальный код-заглушка для будущей Telegram-авторизации.";
+            }
+
             AccountSession = new AccountSession
             {
                 IsAuthorized = false,
@@ -294,9 +329,58 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     LastSyncedAt = DateTimeOffset.Now
                 }
             };
-            AuthStatus = "Отправьте этот код нашему Telegram-боту. После подтверждения приложение сможет получить подписку.";
+
             StatusText = "Код Telegram-авторизации создан";
-            return Task.CompletedTask;
+            await SaveAsync(setStatus: false);
+        });
+    }
+
+    private async Task CheckAuthStatusAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            if (string.IsNullOrWhiteSpace(AuthApiBaseUrl))
+            {
+                StatusText = "Backend URL авторизации не задан.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(LoginCode) || LoginCode == "------")
+            {
+                StatusText = "Сначала получите код Telegram-авторизации.";
+                return;
+            }
+
+            var result = await _telegramAuthApiClient.GetStatusAsync(AuthApiBaseUrl, _authDeviceId, LoginCode);
+            if (!result.IsAuthorized)
+            {
+                AuthStatus = string.IsNullOrWhiteSpace(result.Message)
+                    ? "Подтверждение в Telegram еще не получено."
+                    : result.Message;
+                StatusText = "Авторизация ожидает подтверждения";
+                return;
+            }
+
+            var secrets = await _secretSettingsStore.LoadAsync();
+            secrets.AuthToken = result.AuthToken;
+            if (!string.IsNullOrWhiteSpace(result.SubscriptionUrl))
+            {
+                secrets.SubscriptionUrl = result.SubscriptionUrl;
+                SubscriptionUrl = result.SubscriptionUrl;
+            }
+            await _secretSettingsStore.SaveAsync(secrets);
+
+            AccountSession = new AccountSession
+            {
+                IsAuthorized = true,
+                DisplayName = string.IsNullOrWhiteSpace(result.DisplayName) ? "Telegram подключен" : result.DisplayName,
+                AuthorizedAt = DateTimeOffset.Now,
+                Subscription = result.Subscription ?? new SubscriptionSummary()
+            };
+
+            AuthStatus = "Telegram подтвержден. Подписка сохранена локально.";
+            StatusText = "Авторизация завершена";
+            await SaveAsync(setStatus: false);
         });
     }
 
@@ -461,6 +545,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         await _settingsStore.SaveAsync(new AppSettings
         {
             SubscriptionUrl = SubscriptionUrl.Trim(),
+            AuthApiBaseUrl = AuthApiBaseUrl.Trim(),
             TrafficMode = TrafficMode,
             LastSubscriptionRefresh = LastRefresh,
             SelectedProcessNames = GetSelectedProcessNames().ToList(),
@@ -641,6 +726,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ((RelayCommand)LoadApplicationsCommand).RaiseCanExecuteChanged();
         ((RelayCommand)AddManualApplicationCommand).RaiseCanExecuteChanged();
         ((RelayCommand)GenerateLoginCodeCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)CheckAuthStatusCommand).RaiseCanExecuteChanged();
         ((RelayCommand)RunDiagnosticsCommand).RaiseCanExecuteChanged();
     }
 
@@ -661,6 +747,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+
 
 
 

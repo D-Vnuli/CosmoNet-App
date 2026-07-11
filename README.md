@@ -4,13 +4,13 @@ Native Windows client for CosmoNet subscriptions. The app is built on WPF and pr
 
 ## Current Stage
 
-Stage 6: subscription metadata sync, account/session model, local security, split tunneling, and sing-box diagnostics.
+Stage 7: app-side Telegram auth contract, subscription metadata sync, local security, split tunneling, and sing-box diagnostics.
 
 Implemented:
 
 - Main screen with fixed subscription expiry, subscription status, server status, and connection state blocks.
 - One-click power button: gray means disconnected, blue means connecting, green means connected.
-- Telegram authorization UX placeholder with a short login code flow for the future bot confirmation API.
+- Telegram authorization UX with backend URL, auth code request, status polling, and local fallback code while backend is not configured.
 - Account/session and subscription summary models for tariff, expiry date, device limit, traffic usage, and sync state.
 - Reads subscription metadata from HTTP headers such as `subscription-userinfo` and `profile-title` when the subscription endpoint provides them.
 - Collapsible subscription details so the main screen stays compact.
@@ -27,7 +27,7 @@ Implemented:
 
 Not implemented yet:
 
-- Real Telegram backend confirmation and secure account token exchange.
+- Server-side Telegram bot confirmation endpoints for `POST /api/app/auth/start` and `GET /api/app/auth/status`.
 - Real subscription metadata API for expiry date and user plan details.
 - Bundled installer and automatic `sing-box` core delivery.
 - End-to-end runtime validation with a real CosmoNet server profile.
@@ -57,9 +57,10 @@ TUN mode requires running the app as administrator.
 ## Security Notes
 
 - Do not commit `.env`, subscription URLs, Telegram identifiers, generated configs, or local settings.
-- Subscription URLs and future auth tokens must live in the DPAPI-protected `secrets.dat`, not in `settings.json`.
+- Subscription URLs, auth device id, and auth tokens live in the DPAPI-protected `secrets.dat`, not in `settings.json`.
 - The app stores selected process names locally; absolute app paths are only used for local display.
 - The `sing-box` binary is intentionally ignored by git and should be supplied by the installer or local developer setup.
+
 
 
 

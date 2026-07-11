@@ -34,10 +34,9 @@ public sealed class SettingsStore
             await JsonSerializer.SerializeAsync(stream, settings, JsonOptions, cancellationToken);
         }
 
-        await _secretSettingsStore.SaveAsync(new SecretSettings
-        {
-            SubscriptionUrl = settings.SubscriptionUrl.Trim()
-        }, cancellationToken);
+        var secrets = await _secretSettingsStore.LoadAsync(cancellationToken);
+        secrets.SubscriptionUrl = settings.SubscriptionUrl.Trim();
+        await _secretSettingsStore.SaveAsync(secrets, cancellationToken);
     }
 
     private static async Task<AppSettings> LoadPublicSettingsAsync(CancellationToken cancellationToken)

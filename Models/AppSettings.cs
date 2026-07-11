@@ -7,6 +7,7 @@ public sealed class AppSettings
     [JsonIgnore]
     public string SubscriptionUrl { get; set; } = "";
 
+    public string AuthApiBaseUrl { get; set; } = "";
     public TrafficMode TrafficMode { get; set; } = TrafficMode.AllTraffic;
     public bool StartMinimized { get; set; }
     public DateTimeOffset? LastSubscriptionRefresh { get; set; }
