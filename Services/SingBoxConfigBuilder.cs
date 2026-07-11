@@ -151,6 +151,7 @@ public sealed class SingBoxConfigBuilder
             rules.Add(
                 new Dictionary<string, object?>
                 {
+                    ["inbound"] = new[] { "tun-in" },
                     ["process_name"] = selectedProcessNames
                         .Where(name => !string.IsNullOrWhiteSpace(name))
                         .Distinct(StringComparer.OrdinalIgnoreCase)

@@ -12,5 +12,6 @@ public sealed class AppSettings
     public bool StartMinimized { get; set; }
     public DateTimeOffset? LastSubscriptionRefresh { get; set; }
     public List<string> SelectedProcessNames { get; set; } = [];
+    public Dictionary<string, string> SelectedApplicationPaths { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public AccountSession AccountSession { get; set; } = new();
 }

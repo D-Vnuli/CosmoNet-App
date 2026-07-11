@@ -108,6 +108,7 @@ public sealed class SingBoxService
             FileName = AppPaths.BundledSingBoxPath,
             Arguments = $"run -c \"{configPath}\"",
             CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
             UseShellExecute = startElevated,
             RedirectStandardError = !startElevated,
             RedirectStandardOutput = !startElevated,

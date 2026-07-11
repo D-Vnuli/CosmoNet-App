@@ -5,6 +5,8 @@ namespace CosmoNet.App.Services;
 
 public sealed class InstalledApplicationsService
 {
+    private readonly ApplicationIconService _iconService = new();
+
     private static readonly string[] NoisyProcessNames =
     [
         "conhost.exe",
@@ -26,7 +28,7 @@ public sealed class InstalledApplicationsService
         return Task.Run(() => LoadApplications(selected, cancellationToken), cancellationToken);
     }
 
-    private static IReadOnlyList<InstalledApplication> LoadApplications(
+    private IReadOnlyList<InstalledApplication> LoadApplications(
         ISet<string> selectedProcessNames,
         CancellationToken cancellationToken)
     {
@@ -66,6 +68,7 @@ public sealed class InstalledApplicationsService
                 DisplayName = app.DisplayName,
                 ProcessName = app.ProcessName,
                 Path = app.Path,
+                Icon = _iconService.GetIcon(app.Path),
                 IsSelected = selectedProcessNames.Contains(app.ProcessName)
             })
             .OrderByDescending(app => app.IsSelected)
