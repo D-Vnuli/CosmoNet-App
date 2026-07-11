@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <None Include="Resources\sing-box\sing-box.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Resources\sing-box\sing-box.exe')" />
+    <Content Include="Resources\cosmic-background.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
