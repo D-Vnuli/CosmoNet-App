@@ -1,9 +1,11 @@
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Windows.Input;
+using System.Windows.Threading;
 using CosmoNet.App.Models;
 using CosmoNet.App.Services;
 
@@ -18,6 +20,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SingBoxConfigBuilder _configBuilder = new();
     private readonly SingBoxService _singBoxService = new();
     private readonly InstalledApplicationsService _applicationsService = new();
+    private readonly DispatcherTimer _serverAvailabilityTimer;
+
+    private const string DefaultProbeHost = "45.151.69.119";
+    private const int DefaultProbePort = 443;
 
     private string _subscriptionUrl = "";
     private string _authApiBaseUrl = "";
@@ -31,11 +37,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private AccountSession _accountSession = new();
     private bool _isBusy;
     private bool _isConnected;
+    private bool _isServerAvailable;
+    private bool _isCheckingServerAvailability;
     private TrafficMode _trafficMode = TrafficMode.AllTraffic;
     private DateTimeOffset? _lastRefresh;
 
     public MainViewModel()
     {
+        _serverAvailabilityTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(15)
+        };
+        _serverAvailabilityTimer.Tick += async (_, _) => await RefreshServerAvailabilityAsync();
+
         RefreshCommand = new RelayCommand(RefreshAsync, () => !IsBusy && !IsConnected);
         PowerCommand = new RelayCommand(ToggleConnectionAsync);
         DisconnectCommand = new RelayCommand(DisconnectAsync, () => !IsBusy && IsConnected);
@@ -157,6 +171,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(PowerButtonColor));
                 OnPropertyChanged(nameof(ConnectionStateText));
                 OnPropertyChanged(nameof(ConnectionStatusTitle));
+                OnPropertyChanged(nameof(ServerStatusText));
+                OnPropertyChanged(nameof(ServerStatusColor));
+                OnPropertyChanged(nameof(CurrentCountryName));
+                OnPropertyChanged(nameof(CurrentCountryFlag));
+                OnPropertyChanged(nameof(CurrentCountryCode));
             }
         }
     }
@@ -248,11 +267,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ? "Синхронизация еще не выполнялась"
         : $"Синхронизация: {Subscription.LastSyncedAt.Value.ToLocalTime():dd.MM.yyyy HH:mm}";
 
-    public string ServerStatusText => Profiles.Count > 0
-        ? $"Доступно профилей: {Profiles.Count}"
-        : "Ожидает подписку";
+    public string ServerStatusText => _isServerAvailable
+        ? "Сервер доступен"
+        : "Сервер недоступен";
 
-    public string CurrentServerText => Profiles.FirstOrDefault()?.DisplayName ?? "Сервер не выбран";
+    public string ServerStatusColor => _isServerAvailable
+        ? "#35D587"
+        : "#E6585C";
+
+    private VpnProfile? PreferredProfile => Profiles
+        .OrderBy(profile => profile.ConnectionPriority)
+        .FirstOrDefault();
+
+    public string CurrentCountryName => PreferredProfile?.CountryName ?? "Нидерланды";
+    public string CurrentCountryFlag => PreferredProfile?.CountryFlag ?? "🇳🇱";
+    public string CurrentCountryCode => PreferredProfile?.CountryCode ?? "NL";
 
     public string ConnectionStatusTitle => IsConnected ? "Подключено" : "Не подключено";
 
@@ -298,6 +327,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CoreStatus));
         OnPropertyChanged(nameof(AdminStatus));
         RefreshDerivedStatus();
+
+        await RefreshServerAvailabilityAsync();
+        _serverAvailabilityTimer.Start();
     }
 
     private async Task GenerateLoginCodeAsync()
@@ -436,8 +468,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 throw new InvalidOperationException(diagnostic.Message);
             }
 
-            _singBoxService.Start(configPath, useTunMode: true);
+            await _singBoxService.StartAsync(configPath, useTunMode: true);
             IsConnected = true;
+            await RefreshServerAvailabilityAsync();
             LastRefresh ??= DateTimeOffset.Now;
             await SaveAsync(setStatus: false);
             StatusText = TrafficMode == TrafficMode.AllTraffic
@@ -452,6 +485,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _singBoxService.Stop();
         IsConnected = false;
         StatusText = "Отключено";
+        _ = RefreshServerAvailabilityAsync();
         RefreshDerivedStatus();
         return Task.CompletedTask;
     }
@@ -617,6 +651,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void ApplySubscription(SubscriptionLoadResult subscription)
     {
         ReplaceProfiles(subscription.Profiles);
+        _ = RefreshServerAvailabilityAsync();
 
         AccountSession = new AccountSession
         {
@@ -633,6 +668,50 @@ public sealed class MainViewModel : INotifyPropertyChanged
         foreach (var profile in profiles)
         {
             Profiles.Add(profile);
+        }
+    }
+
+    private async Task RefreshServerAvailabilityAsync()
+    {
+        if (_isCheckingServerAvailability)
+        {
+            return;
+        }
+
+        _isCheckingServerAvailability = true;
+        try
+        {
+            var profile = PreferredProfile;
+            var host = !string.IsNullOrWhiteSpace(profile?.Server)
+                ? profile.Server
+                : DefaultProbeHost;
+            var port = profile?.Port > 0
+                ? profile.Port
+                : DefaultProbePort;
+
+            var isAvailable = false;
+            try
+            {
+                using var client = new TcpClient();
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await client.ConnectAsync(host, port, timeout.Token);
+                isAvailable = client.Connected;
+            }
+            catch
+            {
+                isAvailable = false;
+            }
+
+            if (_isServerAvailable != isAvailable)
+            {
+                _isServerAvailable = isAvailable;
+                OnPropertyChanged(nameof(ServerStatusText));
+                OnPropertyChanged(nameof(ServerStatusColor));
+            }
+        }
+        finally
+        {
+            _isCheckingServerAvailability = false;
         }
     }
 
@@ -677,7 +756,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void RefreshDerivedStatus()
     {
         OnPropertyChanged(nameof(ServerStatusText));
-        OnPropertyChanged(nameof(CurrentServerText));
+        OnPropertyChanged(nameof(ServerStatusColor));
+        OnPropertyChanged(nameof(CurrentCountryName));
+        OnPropertyChanged(nameof(CurrentCountryFlag));
+        OnPropertyChanged(nameof(CurrentCountryCode));
         OnPropertyChanged(nameof(ConnectionStatusTitle));
         OnPropertyChanged(nameof(ConnectionStateText));
         OnPropertyChanged(nameof(PowerButtonColor));

@@ -28,9 +28,32 @@ public sealed class SingBoxConfigBuilder
 
         AppPaths.EnsureDataDirectory();
 
-        var outbounds = profiles
+        var orderedProfiles = profiles
+            .OrderBy(profile => profile.ConnectionPriority)
+            .ThenBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(profile => profile.Server, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var profileOutbounds = orderedProfiles
             .Select((profile, index) => BuildOutbound(profile, index))
             .ToList<object>();
+
+        var profileTags = Enumerable.Range(0, profileOutbounds.Count)
+            .Select(index => $"profile-{index}")
+            .ToArray();
+
+        var outbounds = profileOutbounds;
+
+        outbounds.Add(new Dictionary<string, object?>
+        {
+            ["type"] = "urltest",
+            ["tag"] = "cosmonet-auto",
+            ["outbounds"] = profileTags,
+            ["url"] = "https://www.gstatic.com/generate_204",
+            ["interval"] = "1m",
+            ["tolerance"] = 50,
+            ["interrupt_exist_connections"] = true
+        });
 
         outbounds.Add(new Dictionary<string, object?> { ["type"] = "direct", ["tag"] = "direct" });
         outbounds.Add(new Dictionary<string, object?> { ["type"] = "block", ["tag"] = "block" });
@@ -55,8 +78,34 @@ public sealed class SingBoxConfigBuilder
         {
             ["servers"] = new object[]
             {
-                new Dictionary<string, object?> { ["tag"] = "cloudflare", ["address"] = "https://1.1.1.1/dns-query" },
-                new Dictionary<string, object?> { ["tag"] = "google", ["address"] = "https://8.8.8.8/dns-query" }
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "https",
+                    ["tag"] = "cloudflare",
+                    ["server"] = "1.1.1.1",
+                    ["server_port"] = 443,
+                    ["path"] = "/dns-query",
+                    ["headers"] = new Dictionary<string, string> { ["Host"] = "cloudflare-dns.com" },
+                    ["tls"] = new Dictionary<string, object?>
+                    {
+                        ["enabled"] = true,
+                        ["server_name"] = "cloudflare-dns.com"
+                    }
+                },
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "https",
+                    ["tag"] = "google",
+                    ["server"] = "8.8.8.8",
+                    ["server_port"] = 443,
+                    ["path"] = "/dns-query",
+                    ["headers"] = new Dictionary<string, string> { ["Host"] = "dns.google" },
+                    ["tls"] = new Dictionary<string, object?>
+                    {
+                        ["enabled"] = true,
+                        ["server_name"] = "dns.google"
+                    }
+                }
             },
             ["final"] = "cloudflare"
         };
@@ -69,10 +118,11 @@ public sealed class SingBoxConfigBuilder
             ["type"] = "tun",
             ["tag"] = "tun-in",
             ["interface_name"] = "CosmoNet",
-            ["address"] = new[] { "172.19.0.1/30" },
+            ["address"] = new[] { "172.19.0.1/30", "fdfe:dcba:9876::1/126" },
+            ["mtu"] = 1400,
             ["auto_route"] = true,
-            ["strict_route"] = true,
-            ["stack"] = "system"
+            ["strict_route"] = false,
+            ["stack"] = "mixed"
         };
     }
 
@@ -83,13 +133,22 @@ public sealed class SingBoxConfigBuilder
         var route = new Dictionary<string, object?>
         {
             ["auto_detect_interface"] = true,
-            ["final"] = trafficMode == TrafficMode.AllTraffic ? "profile-0" : "direct"
+            ["default_domain_resolver"] = "cloudflare",
+            ["final"] = trafficMode == TrafficMode.AllTraffic ? "cosmonet-auto" : "direct"
+        };
+
+        var rules = new List<object>
+        {
+            new Dictionary<string, object?>
+            {
+                ["protocol"] = "dns",
+                ["action"] = "hijack-dns"
+            }
         };
 
         if (trafficMode == TrafficMode.SelectedApps)
         {
-            route["rules"] = new object[]
-            {
+            rules.Add(
                 new Dictionary<string, object?>
                 {
                     ["process_name"] = selectedProcessNames
@@ -97,10 +156,11 @@ public sealed class SingBoxConfigBuilder
                         .Distinct(StringComparer.OrdinalIgnoreCase)
                         .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
                         .ToArray(),
-                    ["outbound"] = "profile-0"
-                }
-            };
+                    ["outbound"] = "cosmonet-auto"
+                });
         }
+
+        route["rules"] = rules;
 
         return route;
     }

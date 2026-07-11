@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Security.Principal;
 using CosmoNet.App.Models;
 
@@ -84,7 +85,10 @@ public sealed class SingBoxService
             : CoreDiagnosticResult.Fail("Конфиг sing-box не прошел проверку.", details);
     }
 
-    public void Start(string configPath, bool useTunMode)
+    public async Task StartAsync(
+        string configPath,
+        bool useTunMode,
+        CancellationToken cancellationToken = default)
     {
         if (IsRunning)
         {
@@ -98,26 +102,66 @@ public sealed class SingBoxService
                 AppPaths.BundledSingBoxPath);
         }
 
-        if (useTunMode && !IsAdministrator)
-        {
-            throw new InvalidOperationException("Для TUN-режима запустите CosmoNet от имени администратора.");
-        }
-
-        _process = Process.Start(new ProcessStartInfo
+        var startElevated = useTunMode && !IsAdministrator;
+        var startInfo = new ProcessStartInfo
         {
             FileName = AppPaths.BundledSingBoxPath,
             Arguments = $"run -c \"{configPath}\"",
             CreateNoWindow = true,
-            UseShellExecute = false,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
+            UseShellExecute = startElevated,
+            RedirectStandardError = !startElevated,
+            RedirectStandardOutput = !startElevated,
             WorkingDirectory = Path.GetDirectoryName(AppPaths.BundledSingBoxPath)
-        });
+        };
+
+        if (startElevated)
+        {
+            startInfo.Verb = "runas";
+        }
+
+        try
+        {
+            _process = Process.Start(startInfo);
+        }
+        catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
+        {
+            throw new InvalidOperationException("Подключение отменено: подтвердите запрос Windows на запуск VPN.");
+        }
 
         if (_process is null)
         {
             throw new InvalidOperationException("Не удалось запустить sing-box.");
         }
+
+        var outputTask = startElevated
+            ? null
+            : _process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var errorTask = startElevated
+            ? null
+            : _process.StandardError.ReadToEndAsync(cancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+
+        if (!_process.HasExited)
+        {
+            return;
+        }
+
+        var details = "";
+        if (!startElevated)
+        {
+            var output = await outputTask!;
+            var error = await errorTask!;
+            details = string.Join(
+                Environment.NewLine,
+                new[] { output, error }.Where(text => !string.IsNullOrWhiteSpace(text))).Trim();
+        }
+
+        _process.Dispose();
+        _process = null;
+        throw new InvalidOperationException(
+            string.IsNullOrWhiteSpace(details)
+                ? "sing-box завершился сразу после запуска."
+                : $"sing-box не запустился: {details}");
     }
 
     public void Stop()

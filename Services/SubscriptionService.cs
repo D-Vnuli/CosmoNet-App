@@ -25,9 +25,24 @@ public sealed class SubscriptionService
         string subscriptionUrl,
         CancellationToken cancellationToken = default)
     {
-        if (!Uri.TryCreate(subscriptionUrl.Trim(), UriKind.Absolute, out var uri))
+        var source = subscriptionUrl.Trim();
+        if (source.StartsWith("vless://", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Введите корректную ссылку подписки CosmoNet.");
+            return new SubscriptionLoadResult
+            {
+                Profiles = ParseSubscription(source),
+                Summary = new SubscriptionSummary
+                {
+                    TariffName = "CosmoNet",
+                    LastSyncedAt = DateTimeOffset.Now
+                }
+            };
+        }
+
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException("Введите ссылку подписки HTTPS или конфигурацию vless://.");
         }
 
         using var response = await _httpClient.GetAsync(uri, cancellationToken);
