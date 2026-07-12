@@ -13,7 +13,7 @@ using CosmoNet.App.Services;
 
 namespace CosmoNet.App.ViewModels;
 
-public sealed class MainViewModel : INotifyPropertyChanged
+public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly SettingsStore _settingsStore = new();
     private readonly SubscriptionService _subscriptionService = new();
@@ -23,6 +23,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SingBoxService _singBoxService = new();
     private readonly ApplicationIconService _applicationIconService = new();
     private readonly DispatcherTimer _serverAvailabilityTimer;
+    private readonly VpnLogService _vpnLogService = new();
 
     private const string DefaultProbeHost = "45.151.69.119";
     private const int DefaultProbePort = 443;
@@ -42,10 +43,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _isCheckingServerAvailability;
     private TrafficMode _trafficMode = TrafficMode.AllTraffic;
     private DateTimeOffset? _lastRefresh;
+    private string _vpnLogText = "";
+    private bool _isLogMonitoring;
+
+    private const int MaximumLogTextLength = 250_000;
 
     public MainViewModel()
     {
         AvailableApplications.CollectionChanged += OnAvailableApplicationsChanged;
+        _vpnLogService.LogReceived += OnLogReceived;
 
         _serverAvailabilityTimer = new DispatcherTimer
         {
@@ -62,6 +68,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         GenerateLoginCodeCommand = new RelayCommand(GenerateLoginCodeAsync, () => !IsBusy);
         CheckAuthStatusCommand = new RelayCommand(CheckAuthStatusAsync, () => !IsBusy);
         RunDiagnosticsCommand = new RelayCommand(RunDiagnosticsAsync, () => !IsBusy);
+        EnableLogsCommand = new RelayCommand(EnableLogsAsync, () => !IsLogMonitoring);
+        DisableLogsCommand = new RelayCommand(DisableLogsAsync, () => IsLogMonitoring);
+        ClearLogsCommand = new RelayCommand(ClearLogsAsync);
+        SaveLogsCommand = new RelayCommand(SaveLogsAsync);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -79,6 +89,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand GenerateLoginCodeCommand { get; }
     public ICommand CheckAuthStatusCommand { get; }
     public ICommand RunDiagnosticsCommand { get; }
+    public ICommand EnableLogsCommand { get; }
+    public ICommand DisableLogsCommand { get; }
+    public ICommand ClearLogsCommand { get; }
+    public ICommand SaveLogsCommand { get; }
 
     public string SubscriptionUrl
     {
@@ -114,6 +128,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         get => _diagnosticText;
         set => SetField(ref _diagnosticText, value);
+    }
+
+    public string VpnLogText
+    {
+        get => _vpnLogText;
+        private set => SetField(ref _vpnLogText, value);
+    }
+
+    public bool IsLogMonitoring
+    {
+        get => _isLogMonitoring;
+        private set
+        {
+            if (SetField(ref _isLogMonitoring, value))
+            {
+                RaiseLogCommandStates();
+            }
+        }
     }
 
     public string LastConfigPath
@@ -326,6 +358,75 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         await RefreshServerAvailabilityAsync();
         _serverAvailabilityTimer.Start();
+    }
+
+    public void Dispose()
+    {
+        _serverAvailabilityTimer.Stop();
+        _vpnLogService.LogReceived -= OnLogReceived;
+        _vpnLogService.Dispose();
+    }
+
+    private async Task EnableLogsAsync()
+    {
+        try
+        {
+            VpnLogText = TrimLogText(await _vpnLogService.StartAsync());
+            IsLogMonitoring = true;
+            StatusText = "Логирование включено";
+        }
+        catch (Exception error)
+        {
+            StatusText = $"Не удалось включить логирование: {error.Message}";
+        }
+    }
+
+    private Task DisableLogsAsync()
+    {
+        _vpnLogService.Stop();
+        IsLogMonitoring = false;
+        StatusText = "Логирование отключено";
+        return Task.CompletedTask;
+    }
+
+    private async Task ClearLogsAsync()
+    {
+        try
+        {
+            await _vpnLogService.ClearAsync();
+            VpnLogText = "";
+            StatusText = "Логи очищены";
+        }
+        catch (Exception error)
+        {
+            StatusText = $"Не удалось очистить логи: {error.Message}";
+        }
+    }
+
+    private async Task SaveLogsAsync()
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Сохранить логи CosmoNet",
+            Filter = "Текстовые файлы (*.txt)|*.txt",
+            DefaultExt = ".txt",
+            FileName = $"cosmonet-log-{DateTime.Now:yyyyMMdd-HHmmss}.txt"
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            await _vpnLogService.SaveAsAsync(dialog.FileName);
+            StatusText = "Логи сохранены";
+        }
+        catch (Exception error)
+        {
+            StatusText = $"Не удалось сохранить логи: {error.Message}";
+        }
     }
 
     private async Task GenerateLoginCodeAsync()
@@ -693,6 +794,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    private void OnLogReceived(object? sender, string content)
+    {
+        VpnLogText = TrimLogText(VpnLogText + content);
+    }
+
+    private static string TrimLogText(string text)
+    {
+        return text.Length <= MaximumLogTextLength
+            ? text
+            : text[^MaximumLogTextLength..];
+    }
+
     private static string NormalizeProcessName(string value)
     {
         var processName = value.Trim().Trim('"');
@@ -868,6 +981,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ((RelayCommand)GenerateLoginCodeCommand).RaiseCanExecuteChanged();
         ((RelayCommand)CheckAuthStatusCommand).RaiseCanExecuteChanged();
         ((RelayCommand)RunDiagnosticsCommand).RaiseCanExecuteChanged();
+    }
+
+    private void RaiseLogCommandStates()
+    {
+        ((RelayCommand)EnableLogsCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)DisableLogsCommand).RaiseCanExecuteChanged();
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

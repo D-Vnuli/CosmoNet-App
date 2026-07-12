@@ -60,7 +60,12 @@ public sealed class SingBoxConfigBuilder
 
         var config = new Dictionary<string, object?>
         {
-            ["log"] = new Dictionary<string, object?> { ["level"] = "info", ["timestamp"] = true },
+            ["log"] = new Dictionary<string, object?>
+            {
+                ["level"] = "info",
+                ["timestamp"] = true,
+                ["output"] = AppPaths.SingBoxLogPath
+            },
             ["dns"] = BuildDns(),
             ["inbounds"] = new object[] { BuildTunInbound() },
             ["outbounds"] = outbounds,

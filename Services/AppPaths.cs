@@ -9,6 +9,7 @@ public static class AppPaths
     public static string SettingsPath => Path.Combine(DataDirectory, "settings.json");
     public static string SecretSettingsPath => Path.Combine(DataDirectory, "secrets.dat");
     public static string GeneratedConfigPath => Path.Combine(DataDirectory, "sing-box.json");
+    public static string SingBoxLogPath => Path.Combine(DataDirectory, "sing-box.log");
 
     public static string BundledSingBoxPath => Path.Combine(
         AppContext.BaseDirectory,

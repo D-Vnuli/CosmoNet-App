@@ -121,6 +121,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _toastCancellation?.Cancel();
         _trayIcon.Dispose();
         _viewModel.DisconnectCommand.Execute(null);
+        _viewModel.Dispose();
+    }
+
+    private void OnVpnLogTextChanged(object sender, TextChangedEventArgs e)
+    {
+        VpnLogBox.ScrollToEnd();
     }
 
     private void OnTitleBarMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
