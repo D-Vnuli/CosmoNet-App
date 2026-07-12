@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -420,7 +420,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         try
         {
-            await _vpnLogService.SaveAsAsync(dialog.FileName);
+            await _vpnLogService.SaveAsAsync(dialog.FileName, VpnLogText);
             StatusText = "Логи сохранены";
         }
         catch (Exception error)
@@ -554,6 +554,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             }
 
             var selectedProcesses = GetSelectedProcessNames();
+            AppendDiagnosticLog($"Запуск sing-box. Профили: {GetProfileTypes()}.");
             StatusText = "Готовим конфиг...";
             var configPath = await _configBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses);
             LastConfigPath = configPath;
@@ -562,10 +563,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             ApplyDiagnosticResult(diagnostic);
             if (!diagnostic.Success)
             {
+                AppendDiagnosticLog("Ошибка проверки конфигурации sing-box. Код: CONFIG_CHECK_FAILED.");
                 throw new InvalidOperationException(diagnostic.Message);
             }
 
             await _singBoxService.StartAsync(configPath, useTunMode: true);
+            AppendDiagnosticLog("sing-box запущен. Подключение успешно.");
             IsConnected = true;
             await RefreshServerAvailabilityAsync();
             LastRefresh ??= DateTimeOffset.Now;
@@ -579,6 +582,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private Task DisconnectAsync()
     {
+        AppendDiagnosticLog("Остановка процесса sing-box.");
         _singBoxService.Stop();
         IsConnected = false;
         StatusText = "Отключено";
@@ -799,6 +803,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         VpnLogText = TrimLogText(VpnLogText + content);
     }
 
+    private void AppendDiagnosticLog(string message)
+    {
+        if (!IsLogMonitoring)
+        {
+            return;
+        }
+
+        VpnLogText = TrimLogText($"{VpnLogText}[{DateTimeOffset.Now:HH:mm:ss}] [CosmoNet] {message}{Environment.NewLine}");
+    }
+
+    private string GetProfileTypes()
+    {
+        var types = Profiles
+            .OrderBy(profile => profile.ConnectionPriority)
+            .Select(profile => profile.Security.Equals("reality", StringComparison.OrdinalIgnoreCase)
+                ? "REALITY"
+                : profile.Network.Equals("ws", StringComparison.OrdinalIgnoreCase)
+                    ? "WS"
+                    : "TCP")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return types.Count == 0 ? "не определены" : string.Join(" -> ", types);
+    }
+
     private static string TrimLogText(string text)
     {
         return text.Length <= MaximumLogTextLength
@@ -896,6 +925,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         catch (Exception error)
         {
+            AppendDiagnosticLog($"Ошибка подключения. Код: 0x{error.HResult:X8}.");
             StatusText = error.Message;
         }
         finally
