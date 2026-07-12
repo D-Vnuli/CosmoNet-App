@@ -51,8 +51,8 @@ public sealed class SingBoxConfigBuilder
             ["outbounds"] = profileTags,
             ["url"] = "https://www.gstatic.com/generate_204",
             ["interval"] = "1m",
-            ["tolerance"] = 50,
-            ["interrupt_exist_connections"] = true
+            ["tolerance"] = 100,
+            ["interrupt_exist_connections"] = false
         });
 
         outbounds.Add(new Dictionary<string, object?> { ["type"] = "direct", ["tag"] = "direct" });
