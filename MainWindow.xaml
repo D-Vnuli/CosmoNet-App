@@ -1,4 +1,4 @@
-<Window x:Class="CosmoNet.App.MainWindow"
+﻿<Window x:Class="CosmoNet.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CosmoNet" Height="760" Width="560" MinHeight="760" MinWidth="560" MaxHeight="760" MaxWidth="560" ResizeMode="NoResize" WindowStyle="None" Background="#051024" Opacity="0" PreviewKeyDown="OnWindowPreviewKeyDown" UseLayoutRounding="True" SnapsToDevicePixels="True">
@@ -368,7 +368,154 @@
                         </Border>
                     </Grid>
                 </TabItem>
-                <TabItem x:Name="InstructionsTab"><Border Margin="0,10,0,0" Background="#CE102442" CornerRadius="14" Padding="20"><StackPanel><TextBlock Text="Быстрый старт" Foreground="White" FontSize="19" FontWeight="SemiBold" /><TextBlock Text="1. Получите код Telegram-авторизации и подтвердите вход в боте." Foreground="#DCEAFF" Margin="0,18,0,0" TextWrapping="Wrap" /><TextBlock Text="2. Обновите подписку, чтобы приложение увидело профили CosmoNet." Foreground="#DCEAFF" Margin="0,10,0,0" TextWrapping="Wrap" /><TextBlock Text="3. Выберите режим трафика и нажмите кнопку питания для подключения." Foreground="#DCEAFF" Margin="0,10,0,0" TextWrapping="Wrap" /></StackPanel></Border></TabItem>
+                <TabItem x:Name="InstructionsTab">
+                    <Border Margin="0,10,0,0" Background="#CE102442" CornerRadius="14" Padding="18,18,10,18">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      PanningMode="VerticalOnly">
+                            <StackPanel Margin="0,0,8,0">
+                                <TextBlock Text="Как пользоваться CosmoNet"
+                                           Foreground="White"
+                                           FontSize="21"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="Ниже собраны все основные действия: от первого запуска до решения проблем с подключением."
+                                           Foreground="#AFC7E3"
+                                           FontSize="12"
+                                           Margin="0,6,0,16"
+                                           TextWrapping="Wrap" />
+
+                                <Border Background="#5A0B1E3A" BorderBrush="#3672A4D4" BorderThickness="1" CornerRadius="12" Padding="15" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="Быстрый запуск"
+                                                   Foreground="#B9D9FF"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold" />
+
+                                        <TextBlock Foreground="White" Margin="0,13,0,0" TextWrapping="Wrap">
+                                            <Run Text="1. Запустите приложение от имени администратора." FontWeight="SemiBold" />
+                                        </TextBlock>
+                                        <TextBlock Text="Это нужно Windows для создания защищённого VPN-подключения. Без прав администратора кнопка подключения может не сработать."
+                                                   Foreground="#C7D8EC" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
+
+                                        <TextBlock Foreground="White" Margin="0,12,0,0" TextWrapping="Wrap">
+                                            <Run Text="2. Добавьте личную подписку." FontWeight="SemiBold" />
+                                        </TextBlock>
+                                        <TextBlock Text="Нажмите карточку «Подписка» на главном экране. Вставьте полученную от CosmoNet ссылку в нижнее поле и нажмите «Загрузить». Ссылка сохраняется на этом компьютере, поэтому повторно вводить её при каждом запуске не нужно."
+                                                   Foreground="#C7D8EC" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
+
+                                        <TextBlock Foreground="White" Margin="0,12,0,0" TextWrapping="Wrap">
+                                            <Run Text="3. Проверьте данные подписки." FontWeight="SemiBold" />
+                                        </TextBlock>
+                                        <TextBlock Text="На карточке должна появиться дата окончания. Откройте карточку ещё раз и убедитесь, что подписка активна. Данные обновляются автоматически; если информация не появилась сразу, подождите до 30 секунд."
+                                                   Foreground="#C7D8EC" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
+
+                                        <TextBlock Foreground="White" Margin="0,12,0,0" TextWrapping="Wrap">
+                                            <Run Text="4. Нажмите большую кнопку питания." FontWeight="SemiBold" />
+                                        </TextBlock>
+                                        <TextBlock Text="Серая кнопка означает, что VPN выключен. Синяя — идёт подключение. Зелёная — VPN работает. Для отключения нажмите эту же кнопку ещё раз."
+                                                   Foreground="#C7D8EC" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Background="#5A0B1E3A" BorderBrush="#3672A4D4" BorderThickness="1" CornerRadius="12" Padding="15" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="Что означает информация на главном экране"
+                                                   Foreground="#B9D9FF"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="• «Сервер доступен» — приложение видит сервер CosmoNet. Это не означает, что VPN уже включён."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="• Страна показывает, через какой сервер будет работать подключение."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="• Строка режима трафика показывает, какие программы будут использовать VPN."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="• Карточка «Подписка» показывает дату окончания. Нажмите на неё, чтобы увидеть статус, страну и количество доступных устройств."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Background="#5A0B1E3A" BorderBrush="#3672A4D4" BorderThickness="1" CornerRadius="12" Padding="15" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="Режимы трафика"
+                                                   Foreground="#B9D9FF"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="Весь трафик через VPN"
+                                                   Foreground="White" FontWeight="SemiBold" Margin="0,12,0,0" />
+                                        <TextBlock Text="Через CosmoNet будут работать браузеры, мессенджеры, игры и остальные программы на компьютере. Это самый простой режим."
+                                                   Foreground="#C7D8EC" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="Только выбранные приложения"
+                                                   Foreground="White" FontWeight="SemiBold" Margin="0,12,0,0" />
+                                        <TextBlock Text="Через VPN будут работать только отмеченные программы. Остальные приложения продолжат использовать обычное интернет-подключение."
+                                                   Foreground="#C7D8EC" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="Как настроить: откройте меню → «Приложения», выберите режим, нажмите «Выбрать .exe», укажите нужную программу, поставьте галочку и нажмите «Сохранить». Если VPN уже включён, отключите и подключите его заново, чтобы применить изменения."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Background="#5A0B1E3A" BorderBrush="#3672A4D4" BorderThickness="1" CornerRadius="12" Padding="15" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="Подписка"
+                                                   Foreground="#B9D9FF"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="После первой загрузки CosmoNet сохраняет ссылку подписки на этом компьютере и обновляет данные автоматически. На главном экране всегда видна дата окончания."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="Когда до окончания останется три дня или меньше, CosmoNet покажет предупреждение. После продления новая дата появится автоматически."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="Не передавайте другим людям ссылку подписки и код входа — они относятся только к вашему аккаунту."
+                                                   Foreground="#F2C98D" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Background="#5A0B1E3A" BorderBrush="#3672A4D4" BorderThickness="1" CornerRadius="12" Padding="15" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="Вход через Telegram"
+                                                   Foreground="#B9D9FF"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="Значок Telegram в правом верхнем углу нужен для привязки аккаунта. Нажмите «Получить код», подтвердите этот код в боте CosmoNet и затем нажмите «Проверить»."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="Если бот не принимает код или подтверждение не появляется, продолжайте использовать личную ссылку подписки — для подключения VPN этого достаточно."
+                                                   Foreground="#C7D8EC" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Background="#5A0B1E3A" BorderBrush="#3672A4D4" BorderThickness="1" CornerRadius="12" Padding="15" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="Сворачивание и работа в трее"
+                                                   Foreground="#B9D9FF"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="Кнопка «×» в правом верхнем углу не завершает CosmoNet — приложение скрывается в область уведомлений рядом с часами, а VPN продолжает работать."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="Чтобы вернуть окно, нажмите значок CosmoNet в трее правой кнопкой мыши и выберите «Открыть». Чтобы полностью закрыть приложение и отключить VPN, выберите в меню значка пункт «Выход»."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Background="#5A0B1E3A" BorderBrush="#3672A4D4" BorderThickness="1" CornerRadius="12" Padding="15" Margin="0,0,0,4">
+                                    <StackPanel>
+                                        <TextBlock Text="Если VPN не подключается"
+                                                   Foreground="#B9D9FF"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="1. Убедитесь, что интернет без VPN работает."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="2. Проверьте, что на главном экране написано «Сервер доступен», а подписка ещё действует."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="3. Закройте CosmoNet через пункт «Выход» в трее и запустите его снова от имени администратора."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="4. Если выбран режим «Только выбранные», проверьте, что нужная программа добавлена и отмечена галочкой."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="5. Откройте меню → «Логи», нажмите «Включить логи», повторите подключение и сохраните файл кнопкой «Сохранить .txt». Этот файл поможет поддержке быстро найти причину ошибки."
+                                                   Foreground="#DCEAFF" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </TabItem>
                 <TabItem x:Name="LogsTab">
                     <Grid Margin="0,10,0,0">
                         <Grid.RowDefinitions>
