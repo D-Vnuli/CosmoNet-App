@@ -20,6 +20,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly SubscriptionService _subscriptionService = new();
     private readonly TelegramAuthApiClient _telegramAuthApiClient = new();
     private readonly FeedbackApiClient _feedbackApiClient = new();
+    private readonly SubscriptionMetadataApiClient _subscriptionMetadataApiClient = new();
     private readonly SecretSettingsStore _secretSettingsStore = new();
     private readonly SingBoxConfigBuilder _configBuilder = new();
     private readonly SingBoxService _singBoxService = new();
@@ -337,7 +338,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         : "Для подключения нужен запуск от администратора";
 
     public string SubscriptionExpiresText => Subscription.ExpiresAt is null
-        ? "Ожидает Telegram"
+        ? (EffectiveSubscriptionStatus == SubscriptionStatus.Active ? "\u0411\u0435\u0437\u0433\u0440\u0430\u043d\u0438\u0447\u043d\u043e" : "\u041e\u0436\u0438\u0434\u0430\u0435\u0442 Telegram")
         : Subscription.ExpiresAt.Value.ToLocalTime().ToString("dd.MM.yyyy");
 
     public string SubscriptionStatusText => EffectiveSubscriptionStatus switch
@@ -353,9 +354,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ? "Тариф неизвестен"
         : Subscription.TariffName;
 
-    public string SubscriptionDevicesText => Subscription.DeviceLimit > 0
-        ? $"Устройств: до {Subscription.DeviceLimit}"
-        : "Лимит устройств появится после синхронизации";
+    public string SubscriptionDevicesText => Subscription.DeviceLimit switch
+    {
+        > 0 => $"Устройств: до {Subscription.DeviceLimit}",
+        0 => "Устройств: безгранично",
+        _ => "Лимит устройств не указан"
+    };
 
     public string SubscriptionTrafficText => Subscription.TrafficLimitBytes > 0
         ? $"Трафик: {FormatBytes(Subscription.TrafficUsedBytes)} / {FormatBytes(Subscription.TrafficLimitBytes)}"
@@ -382,14 +386,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     };
 
     public string SubscriptionModalExpiresText => Subscription.ExpiresAt is null
-        ? "Не указано"
+        ? (EffectiveSubscriptionStatus == SubscriptionStatus.Active ? "\u0411\u0435\u0437\u0433\u0440\u0430\u043d\u0438\u0447\u043d\u043e" : "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u043e")
         : Subscription.ExpiresAt.Value.ToLocalTime().ToString("dd MMMM yyyy", CultureInfo.GetCultureInfo("ru-RU"));
 
     public string SubscriptionModalCountryText => $"{CurrentCountryFlag} {CurrentCountryName}";
 
-    public string SubscriptionModalDeviceLimitText => Subscription.DeviceLimit > 0
-        ? Subscription.DeviceLimit.ToString(CultureInfo.InvariantCulture)
-        : "Безгранично";
+    public string SubscriptionModalDeviceLimitText => Subscription.DeviceLimit switch
+    {
+        > 0 => Subscription.DeviceLimit.Value.ToString(CultureInfo.InvariantCulture),
+        0 => "Безгранично",
+        _ => "Не указано"
+    };
 
     public string SubscriptionModalTrafficUsedText => FormatBytes(Subscription.TrafficUsedBytes);
 
@@ -553,6 +560,63 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    private async Task<SubscriptionLoadResult> LoadSubscriptionWithMetadataAsync()
+    {
+        var subscription = await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl);
+        var subscriptionId = GetSubscriptionId(SubscriptionUrl);
+        var clientId = subscription.Profiles.FirstOrDefault()?.Uuid;
+        if (string.IsNullOrWhiteSpace(subscriptionId) && string.IsNullOrWhiteSpace(clientId))
+        {
+            return subscription;
+        }
+
+        try
+        {
+            var metadata = await _subscriptionMetadataApiClient.GetAsync(
+                GetSubscriptionApiBaseUrl(),
+                subscriptionId,
+                clientId);
+            subscription.Summary.DeviceLimit = metadata.DeviceLimit;
+            subscription.Summary.ExpiresAt = metadata.ExpiresAt;
+            subscription.Summary.Status = metadata.Status;
+        }
+        catch
+        {
+            // The VPN configuration remains usable when the metadata service is unavailable.
+        }
+
+        return subscription;
+    }
+
+    private string GetSubscriptionApiBaseUrl()
+    {
+        if (Uri.TryCreate(SubscriptionUrl.Trim(), UriKind.Absolute, out var subscriptionUri))
+        {
+            var metadataUri = new UriBuilder(Uri.UriSchemeHttp, subscriptionUri.Host, 8090);
+            return metadataUri.Uri.GetLeftPart(UriPartial.Authority);
+        }
+
+        throw new InvalidOperationException("Subscription metadata service is unavailable.");
+    }
+
+    private static string? GetSubscriptionId(string subscriptionUrl)
+    {
+        if (!Uri.TryCreate(subscriptionUrl.Trim(), UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (var index = 0; index < segments.Length - 1; index++)
+        {
+            if (segments[index].Equals("sub", StringComparison.OrdinalIgnoreCase))
+            {
+                return segments[index + 1];
+            }
+        }
+
+        return null;
+    }
     public async Task RefreshSubscriptionInBackgroundAsync()
     {
         if (_isRefreshingSubscription || string.IsNullOrWhiteSpace(SubscriptionUrl))
@@ -563,7 +627,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _isRefreshingSubscription = true;
         try
         {
-            var subscription = await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl);
+            var subscription = await LoadSubscriptionWithMetadataAsync();
             ApplySubscription(subscription);
             LastRefresh = DateTimeOffset.Now;
             await SaveAsync(setStatus: false);
@@ -703,6 +767,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+
     private string GetFeedbackApiBaseUrl()
     {
         if (!string.IsNullOrWhiteSpace(AuthApiBaseUrl))
@@ -722,7 +787,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         await RunBusyAsync(async () =>
         {
             StatusText = "Обновляем подписку...";
-            var subscription = await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl);
+            var subscription = await LoadSubscriptionWithMetadataAsync();
             ApplySubscription(subscription);
             LastRefresh = DateTimeOffset.Now;
             await SaveAsync(setStatus: false);
@@ -754,7 +819,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (Profiles.Count == 0)
             {
                 StatusText = "Загружаем подписку...";
-                ApplySubscription(await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl));
+                ApplySubscription(await LoadSubscriptionWithMetadataAsync());
             }
 
             var selectedProcesses = GetSelectedProcessNames();

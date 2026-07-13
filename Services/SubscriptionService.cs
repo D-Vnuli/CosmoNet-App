@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -101,6 +101,7 @@ public sealed class SubscriptionService
         var download = ReadLong(values, "download");
         var total = ReadLong(values, "total");
         var expire = ReadLong(values, "expire");
+        summary.DeviceLimit ??= ReadDeviceLimit(response, values);
 
         summary.TrafficUsedBytes = Math.Max(0, upload) + Math.Max(0, download);
         summary.TrafficLimitBytes = Math.Max(0, total);
@@ -144,6 +145,31 @@ public sealed class SubscriptionService
             : null;
     }
 
+    private static int? ReadDeviceLimit(
+        HttpResponseMessage response,
+        IReadOnlyDictionary<string, string>? values)
+    {
+        foreach (var key in new[] { "device_limit", "device-limit", "devices", "limit_ip", "limitIp" })
+        {
+            if (values is not null && values.TryGetValue(key, out var value) &&
+                int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) &&
+                parsed >= 0)
+            {
+                return parsed;
+            }
+        }
+
+        foreach (var header in new[] { "x-cosmonet-device-limit", "device-limit" })
+        {
+            var value = ReadHeader(response, header);
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed >= 0)
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
     private static long ReadLong(IReadOnlyDictionary<string, string> values, string key)
     {
         return values.TryGetValue(key, out var value) && long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
