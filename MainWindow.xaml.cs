@@ -14,6 +14,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private readonly MainViewModel _viewModel = new();
     private bool _isMenuOpen;
+    private bool _isSubscriptionDialogOpen;
     private bool _exitRequested;
     private CancellationTokenSource? _toastCancellation;
     private readonly Forms.NotifyIcon _trayIcon;
@@ -34,6 +35,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             _isMenuOpen = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsMenuOpen)));
+        }
+    }
+
+    public bool IsSubscriptionDialogOpen
+    {
+        get => _isSubscriptionDialogOpen;
+        private set
+        {
+            if (_isSubscriptionDialogOpen == value)
+            {
+                return;
+            }
+
+            _isSubscriptionDialogOpen = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSubscriptionDialogOpen)));
         }
     }
 
@@ -79,6 +95,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsMenuOpen = false;
     }
 
+    private void OnSubscriptionCardClick(object sender, RoutedEventArgs e)
+    {
+        IsSubscriptionDialogOpen = true;
+    }
+
+    private void OnCloseSubscriptionDialogClick(object sender, RoutedEventArgs e)
+    {
+        IsSubscriptionDialogOpen = false;
+    }
+
+    private void OnSubscriptionDialogBackdropMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        IsSubscriptionDialogOpen = false;
+    }
+
+    private void OnSubscriptionDialogMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+    }
+
+    private void OnWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && IsSubscriptionDialogOpen)
+        {
+            IsSubscriptionDialogOpen = false;
+            e.Handled = true;
+        }
+    }
     private async void OnRemoveApplicationClick(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: InstalledApplication application })

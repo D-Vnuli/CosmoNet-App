@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -47,6 +48,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _isLogMonitoring;
 
     private const int MaximumLogTextLength = 250_000;
+    private const bool IsDevelopmentSubscriptionControlsEnabled = true;
 
     public MainViewModel()
     {
@@ -57,7 +59,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             Interval = TimeSpan.FromSeconds(15)
         };
-        _serverAvailabilityTimer.Tick += async (_, _) => await RefreshServerAvailabilityAsync();
+        _serverAvailabilityTimer.Tick += async (_, _) => { await RefreshServerAvailabilityAsync(); RefreshSubscriptionStatus(); };
 
         RefreshCommand = new RelayCommand(RefreshAsync, () => !IsBusy && !IsConnected);
         PowerCommand = new RelayCommand(ToggleConnectionAsync);
@@ -270,7 +272,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ? "Ожидает Telegram"
         : Subscription.ExpiresAt.Value.ToLocalTime().ToString("dd.MM.yyyy");
 
-    public string SubscriptionStatusText => Subscription.Status switch
+    public string SubscriptionStatusText => EffectiveSubscriptionStatus switch
     {
         SubscriptionStatus.Active => "Активна",
         SubscriptionStatus.ExpiringSoon => "Скоро закончится",
@@ -295,6 +297,58 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ? "Синхронизация еще не выполнялась"
         : $"Синхронизация: {Subscription.LastSyncedAt.Value.ToLocalTime():dd.MM.yyyy HH:mm}";
 
+    public bool ShowDevelopmentSubscriptionControls => IsDevelopmentSubscriptionControlsEnabled;
+
+    public string SubscriptionModalStatusText => EffectiveSubscriptionStatus switch
+    {
+        SubscriptionStatus.Active => "Активна",
+        SubscriptionStatus.ExpiringSoon => "Скоро закончится",
+        _ => "Не активна"
+    };
+
+    public string SubscriptionModalStatusColor => EffectiveSubscriptionStatus switch
+    {
+        SubscriptionStatus.Active => "#35D587",
+        SubscriptionStatus.ExpiringSoon => "#F0A33C",
+        _ => "#E6585C"
+    };
+
+    public string SubscriptionModalExpiresText => Subscription.ExpiresAt is null
+        ? "Не указано"
+        : Subscription.ExpiresAt.Value.ToLocalTime().ToString("dd MMMM yyyy", CultureInfo.GetCultureInfo("ru-RU"));
+
+    public string SubscriptionModalCountryText => $"{CurrentCountryFlag} {CurrentCountryName}";
+
+    public string SubscriptionModalDeviceLimitText => Subscription.DeviceLimit > 0
+        ? Subscription.DeviceLimit.ToString(CultureInfo.InvariantCulture)
+        : "Безгранично";
+
+    public string SubscriptionModalTrafficUsedText => FormatBytes(Subscription.TrafficUsedBytes);
+
+    private SubscriptionStatus EffectiveSubscriptionStatus
+    {
+        get
+        {
+            if (Subscription.Status == SubscriptionStatus.Disabled)
+            {
+                return SubscriptionStatus.Disabled;
+            }
+
+            if (Subscription.ExpiresAt is null)
+            {
+                return Subscription.Status;
+            }
+
+            var today = DateOnly.FromDateTime(DateTime.Now);
+            var expiresOn = DateOnly.FromDateTime(Subscription.ExpiresAt.Value.ToLocalTime().DateTime);
+            if (today > expiresOn)
+            {
+                return SubscriptionStatus.Expired;
+            }
+
+            return today == expiresOn ? SubscriptionStatus.ExpiringSoon : Subscription.Status;
+        }
+    }
     public string ServerStatusText => _isServerAvailable
         ? "Сервер доступен"
         : "Сервер недоступен";
@@ -980,6 +1034,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(SubscriptionDevicesText));
         OnPropertyChanged(nameof(SubscriptionTrafficText));
         OnPropertyChanged(nameof(SubscriptionLastSyncText));
+        OnPropertyChanged(nameof(SubscriptionModalStatusText));
+        OnPropertyChanged(nameof(SubscriptionModalStatusColor));
+        OnPropertyChanged(nameof(SubscriptionModalExpiresText));
+        OnPropertyChanged(nameof(SubscriptionModalCountryText));
+        OnPropertyChanged(nameof(SubscriptionModalDeviceLimitText));
+        OnPropertyChanged(nameof(SubscriptionModalTrafficUsedText));
     }
 
     private static string FormatBytes(long bytes)
