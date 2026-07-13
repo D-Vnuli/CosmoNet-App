@@ -1,4 +1,4 @@
-﻿<Window x:Class="CosmoNet.App.MainWindow"
+<Window x:Class="CosmoNet.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CosmoNet" Height="760" Width="560" MinHeight="760" MinWidth="560" MaxHeight="760" MaxWidth="560" ResizeMode="NoResize" WindowStyle="None" Background="#051024" Opacity="0" PreviewKeyDown="OnWindowPreviewKeyDown" UseLayoutRounding="True" SnapsToDevicePixels="True">
@@ -569,6 +569,34 @@
                         </Border>
                     </Grid>
                 </TabItem>
+                <TabItem x:Name="FeedbackTab">
+                    <Border Margin="0,10,0,0" Background="#CE102442" CornerRadius="14" Padding="22">
+                        <StackPanel>
+                            <TextBlock Text="Связаться с командой" Foreground="White" FontSize="21" FontWeight="SemiBold" />
+                            <TextBlock Text="Опишите вопрос или предложение. Мы используем указанный контакт только для ответа на это обращение."
+                                       Foreground="#AFC7E3" FontSize="12" Margin="0,6,0,20" TextWrapping="Wrap" />
+
+                            <TextBlock Text="Как к вам обращаться" Foreground="#DCEAFF" FontWeight="SemiBold" FontSize="12" />
+                            <TextBox Text="{Binding FeedbackName, UpdateSourceTrigger=PropertyChanged}" MaxLength="100" Margin="0,7,0,16" />
+
+                            <TextBlock Text="Контакт для ответа" Foreground="#DCEAFF" FontWeight="SemiBold" FontSize="12" />
+                            <TextBox Text="{Binding FeedbackContacts, UpdateSourceTrigger=PropertyChanged}" MaxLength="300" Margin="0,7,0,16" />
+
+                            <TextBlock Text="Ваше обращение" Foreground="#DCEAFF" FontWeight="SemiBold" FontSize="12" />
+                            <TextBox Text="{Binding FeedbackMessage, UpdateSourceTrigger=PropertyChanged}"
+                                     MaxLength="3000"
+                                     Height="190"
+                                     Margin="0,7,0,16"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Disabled" />
+
+                            <Button Content="Отправить обращение" Command="{Binding SubmitFeedbackCommand}" HorizontalAlignment="Left" Padding="18,8" />
+                            <TextBlock Text="{Binding FeedbackStatus}" Foreground="#AFC7E3" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </TabItem>
             </TabControl>
         </Grid>
 
@@ -576,7 +604,7 @@
         <Border x:Name="MenuPanel" Grid.ZIndex="11" Width="244" HorizontalAlignment="Left" VerticalAlignment="Stretch" Margin="12,96,0,12" Padding="16" Background="#F30B1A33" BorderBrush="#4874A5D8" BorderThickness="1" CornerRadius="16" Visibility="Collapsed" Opacity="0" RenderTransformOrigin="0,0.5">
             <Border.RenderTransform><TranslateTransform X="-18" /></Border.RenderTransform>
             <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="8" Opacity="0.35" Color="#000000" /></Border.Effect>
-            <StackPanel><TextBlock Text="CosmoNet" Foreground="White" FontSize="19" FontWeight="SemiBold" Margin="4,6,0,20" /><ListBox Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource MenuItem}" SelectedIndex="{Binding SelectedIndex, ElementName=MainViews, Mode=TwoWay}" SelectionChanged="OnMenuSelectionChanged" PreviewMouseLeftButtonUp="OnMenuNavigationMouseUp"><ListBoxItem Content="Главная" /><ListBoxItem Content="Приложения" /><ListBoxItem Content="Инструкции" /><ListBoxItem Content="Логи" /></ListBox></StackPanel>
+            <StackPanel><TextBlock Text="CosmoNet" Foreground="White" FontSize="19" FontWeight="SemiBold" Margin="4,6,0,20" /><ListBox Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource MenuItem}" SelectedIndex="{Binding SelectedIndex, ElementName=MainViews, Mode=TwoWay}" SelectionChanged="OnMenuSelectionChanged" PreviewMouseLeftButtonUp="OnMenuNavigationMouseUp"><ListBoxItem Content="Главная" /><ListBoxItem Content="Приложения" /><ListBoxItem Content="Инструкции" /><ListBoxItem Content="Логи" /><ListBoxItem Content="Обратная связь" /></ListBox></StackPanel>
         </Border>
         <Grid x:Name="SubscriptionDialogOverlay" Grid.ZIndex="40" Visibility="Collapsed">
             <Border x:Name="SubscriptionDialogBackdrop" Background="#B8081429" Opacity="0" MouseLeftButtonDown="OnSubscriptionDialogBackdropMouseDown" />

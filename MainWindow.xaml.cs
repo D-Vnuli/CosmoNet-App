@@ -334,7 +334,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         menu.Items.Add("Выход", null, (_, _) => Dispatcher.Invoke(ExitApplication));
 
         var iconPath = Process.GetCurrentProcess().MainModule?.FileName;
-        return new Forms.NotifyIcon
+        var trayIcon = new Forms.NotifyIcon
         {
             Icon = string.IsNullOrWhiteSpace(iconPath)
                 ? System.Drawing.SystemIcons.Application
@@ -343,6 +343,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ContextMenuStrip = menu,
             Visible = true
         };
+        trayIcon.MouseClick += (_, args) =>
+        {
+            if (args.Button == Forms.MouseButtons.Left)
+            {
+                Dispatcher.BeginInvoke(ShowFromTray);
+            }
+        };
+        return trayIcon;
     }
 
     private void OnWindowClosing(object? sender, CancelEventArgs e)

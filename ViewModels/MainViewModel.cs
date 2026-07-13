@@ -19,6 +19,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly SettingsStore _settingsStore = new();
     private readonly SubscriptionService _subscriptionService = new();
     private readonly TelegramAuthApiClient _telegramAuthApiClient = new();
+    private readonly FeedbackApiClient _feedbackApiClient = new();
     private readonly SecretSettingsStore _secretSettingsStore = new();
     private readonly SingBoxConfigBuilder _configBuilder = new();
     private readonly SingBoxService _singBoxService = new();
@@ -49,6 +50,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private DateTimeOffset? _lastRefresh;
     private string _vpnLogText = "";
     private bool _isLogMonitoring;
+    private string _feedbackName = "";
+    private string _feedbackContacts = "";
+    private string _feedbackMessage = "";
+    private string _feedbackStatus = "";
+    private bool _isSubmittingFeedback;
 
     private const int MaximumLogTextLength = 250_000;
     private const bool IsDevelopmentSubscriptionControlsEnabled = true;
@@ -79,6 +85,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         DisableLogsCommand = new RelayCommand(DisableLogsAsync, () => IsLogMonitoring);
         ClearLogsCommand = new RelayCommand(ClearLogsAsync);
         SaveLogsCommand = new RelayCommand(SaveLogsAsync);
+        SubmitFeedbackCommand = new RelayCommand(SubmitFeedbackAsync, CanSubmitFeedback);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -101,6 +108,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand DisableLogsCommand { get; }
     public ICommand ClearLogsCommand { get; }
     public ICommand SaveLogsCommand { get; }
+    public ICommand SubmitFeedbackCommand { get; }
 
     public string SubscriptionUrl
     {
@@ -144,6 +152,60 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         private set => SetField(ref _vpnLogText, value);
     }
 
+
+    public string FeedbackName
+    {
+        get => _feedbackName;
+        set
+        {
+            if (SetField(ref _feedbackName, value))
+            {
+                RaiseFeedbackCommandState();
+            }
+        }
+    }
+
+    public string FeedbackContacts
+    {
+        get => _feedbackContacts;
+        set
+        {
+            if (SetField(ref _feedbackContacts, value))
+            {
+                RaiseFeedbackCommandState();
+            }
+        }
+    }
+
+    public string FeedbackMessage
+    {
+        get => _feedbackMessage;
+        set
+        {
+            if (SetField(ref _feedbackMessage, value))
+            {
+                RaiseFeedbackCommandState();
+            }
+        }
+    }
+
+    public string FeedbackStatus
+    {
+        get => _feedbackStatus;
+        private set => SetField(ref _feedbackStatus, value);
+    }
+
+    public bool IsSubmittingFeedback
+    {
+        get => _isSubmittingFeedback;
+        private set
+        {
+            if (SetField(ref _isSubmittingFeedback, value))
+            {
+                RaiseFeedbackCommandState();
+            }
+        }
+    }
     public bool IsLogMonitoring
     {
         get => _isLogMonitoring;
@@ -600,6 +662,61 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         });
     }
 
+
+    private bool CanSubmitFeedback()
+    {
+        return !IsBusy && !IsSubmittingFeedback &&
+               !string.IsNullOrWhiteSpace(FeedbackName) &&
+               !string.IsNullOrWhiteSpace(FeedbackContacts) &&
+               !string.IsNullOrWhiteSpace(FeedbackMessage);
+    }
+
+    private async Task SubmitFeedbackAsync()
+    {
+        if (!CanSubmitFeedback())
+        {
+            FeedbackStatus = "Заполните имя, контакт и текст обращения.";
+            return;
+        }
+
+        IsSubmittingFeedback = true;
+        FeedbackStatus = "Отправляем обращение...";
+
+        try
+        {
+            await _feedbackApiClient.SendAsync(
+                GetFeedbackApiBaseUrl(),
+                FeedbackName,
+                FeedbackContacts,
+                FeedbackMessage);
+
+            FeedbackMessage = "";
+            FeedbackStatus = "Обращение отправлено. Мы свяжемся с вами по указанному контакту.";
+        }
+        catch
+        {
+            FeedbackStatus = "Не удалось отправить обращение. Попробуйте позже.";
+        }
+        finally
+        {
+            IsSubmittingFeedback = false;
+        }
+    }
+
+    private string GetFeedbackApiBaseUrl()
+    {
+        if (!string.IsNullOrWhiteSpace(AuthApiBaseUrl))
+        {
+            return AuthApiBaseUrl;
+        }
+
+        if (Uri.TryCreate(SubscriptionUrl.Trim(), UriKind.Absolute, out var subscriptionUri))
+        {
+            return subscriptionUri.GetLeftPart(UriPartial.Authority);
+        }
+
+        throw new InvalidOperationException("Сервис обратной связи недоступен.");
+    }
     private async Task RefreshAsync()
     {
         await RunBusyAsync(async () =>
@@ -1136,8 +1253,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ((RelayCommand)GenerateLoginCodeCommand).RaiseCanExecuteChanged();
         ((RelayCommand)CheckAuthStatusCommand).RaiseCanExecuteChanged();
         ((RelayCommand)RunDiagnosticsCommand).RaiseCanExecuteChanged();
+        RaiseFeedbackCommandState();
     }
 
+    private void RaiseFeedbackCommandState()
+    {
+        ((RelayCommand)SubmitFeedbackCommand).RaiseCanExecuteChanged();
+    }
     private void RaiseLogCommandStates()
     {
         ((RelayCommand)EnableLogsCommand).RaiseCanExecuteChanged();
