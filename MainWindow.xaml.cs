@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using CosmoNet.App.Models;
 using CosmoNet.App.ViewModels;
@@ -37,6 +38,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             _isMenuOpen = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsMenuOpen)));
+            AnimateMenu(value);
         }
     }
 
@@ -52,6 +54,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             _isSubscriptionNotificationOpen = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSubscriptionNotificationOpen)));
+            AnimateSubscriptionNotification(value);
         }
     }
 
@@ -81,6 +84,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             _isSubscriptionDialogOpen = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSubscriptionDialogOpen)));
+            AnimateSubscriptionDialog(value);
         }
     }
 
@@ -99,9 +103,167 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        AnimateWindowEntrance();
         await _viewModel.InitializeAsync();
     }
 
+    private void AnimateWindowEntrance()
+    {
+        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(360))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        });
+    }
+
+    private void AnimateMenu(bool show)
+    {
+        if (show)
+        {
+            MenuBackdrop.Visibility = Visibility.Visible;
+            MenuPanel.Visibility = Visibility.Visible;
+            MenuBackdrop.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
+            MenuPanel.Opacity = 0;
+            ((TranslateTransform)MenuPanel.RenderTransform).X = -18;
+            MenuPanel.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(240))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+            ((TranslateTransform)MenuPanel.RenderTransform).BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(-18, 0, TimeSpan.FromMilliseconds(240))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+            return;
+        }
+
+        var menuFade = new DoubleAnimation(MenuPanel.Opacity, 0, TimeSpan.FromMilliseconds(160));
+        menuFade.Completed += (_, _) =>
+        {
+            if (!IsMenuOpen)
+            {
+                MenuPanel.Visibility = Visibility.Collapsed;
+                MenuBackdrop.Visibility = Visibility.Collapsed;
+            }
+        };
+        MenuPanel.BeginAnimation(OpacityProperty, menuFade);
+        MenuBackdrop.BeginAnimation(OpacityProperty, new DoubleAnimation(MenuBackdrop.Opacity, 0, TimeSpan.FromMilliseconds(160)));
+    }
+
+    private void AnimateSubscriptionDialog(bool show)
+    {
+        AnimateOverlay(
+            SubscriptionDialogOverlay,
+            SubscriptionDialogBackdrop,
+            SubscriptionDialogSurface,
+            show,
+            () => IsSubscriptionDialogOpen,
+            0.96,
+            12);
+    }
+
+    private void AnimateSubscriptionNotification(bool show)
+    {
+        AnimateOverlay(
+            SubscriptionNotificationOverlay,
+            SubscriptionNotificationBackdrop,
+            SubscriptionNotificationSurface,
+            show,
+            () => IsSubscriptionNotificationOpen,
+            0.94,
+            10);
+    }
+
+    private static void AnimateOverlay(
+        Grid overlay,
+        Border backdrop,
+        Border surface,
+        bool show,
+        Func<bool> isStillOpen,
+        double scaleFrom,
+        double offsetY)
+    {
+        var transforms = (TransformGroup)surface.RenderTransform;
+        var scale = (ScaleTransform)transforms.Children[0];
+        var translate = (TranslateTransform)transforms.Children[1];
+
+        if (show)
+        {
+            overlay.Visibility = Visibility.Visible;
+            backdrop.Opacity = 0;
+            surface.Opacity = 0;
+            scale.ScaleX = scaleFrom;
+            scale.ScaleY = scaleFrom;
+            translate.Y = offsetY;
+            backdrop.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
+            surface.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(230))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(scaleFrom, 1, TimeSpan.FromMilliseconds(230))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(scaleFrom, 1, TimeSpan.FromMilliseconds(230))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+            translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(offsetY, 0, TimeSpan.FromMilliseconds(230))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+            return;
+        }
+
+        var surfaceFade = new DoubleAnimation(surface.Opacity, 0, TimeSpan.FromMilliseconds(150));
+        surfaceFade.Completed += (_, _) =>
+        {
+            if (!isStillOpen())
+            {
+                overlay.Visibility = Visibility.Collapsed;
+            }
+        };
+        surface.BeginAnimation(OpacityProperty, surfaceFade);
+        backdrop.BeginAnimation(OpacityProperty, new DoubleAnimation(backdrop.Opacity, 0, TimeSpan.FromMilliseconds(150)));
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(scale.ScaleX, scaleFrom, TimeSpan.FromMilliseconds(150)));
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(scale.ScaleY, scaleFrom, TimeSpan.FromMilliseconds(150)));
+        translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(translate.Y, offsetY, TimeSpan.FromMilliseconds(150)));
+    }
+
+    private void AnimateCurrentView()
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (MainViews.SelectedContent is not UIElement content)
+            {
+                return;
+            }
+
+            content.Opacity = 0;
+            content.RenderTransform = new TranslateTransform(0, 10);
+            content.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+            ((TranslateTransform)content.RenderTransform).BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, 0, TimeSpan.FromMilliseconds(220))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+        });
+    }
+
+    private void OnTelegramPopupOpened(object? sender, EventArgs e)
+    {
+        TelegramPopupSurface.Opacity = 0;
+        var transforms = (TransformGroup)TelegramPopupSurface.RenderTransform;
+        var scale = (ScaleTransform)transforms.Children[0];
+        var translate = (TranslateTransform)transforms.Children[1];
+        scale.ScaleX = 0.96;
+        scale.ScaleY = 0.96;
+        translate.Y = -8;
+        TelegramPopupSurface.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.96, 1, TimeSpan.FromMilliseconds(180)));
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.96, 1, TimeSpan.FromMilliseconds(180)));
+        translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-8, 0, TimeSpan.FromMilliseconds(180)));
+    }
     private Task ToggleMenuAsync()
     {
         IsMenuOpen = !IsMenuOpen;
@@ -119,6 +281,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             MainViews.SelectedIndex = menu.SelectedIndex;
             IsMenuOpen = false;
+            AnimateCurrentView();
         }
     }
 
