@@ -24,6 +24,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly SingBoxService _singBoxService = new();
     private readonly ApplicationIconService _applicationIconService = new();
     private readonly DispatcherTimer _serverAvailabilityTimer;
+    private readonly DispatcherTimer _subscriptionRefreshTimer;
     private readonly VpnLogService _vpnLogService = new();
 
     private const string DefaultProbeHost = "45.151.69.119";
@@ -42,6 +43,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _isConnected;
     private bool _isServerAvailable;
     private bool _isCheckingServerAvailability;
+    private bool _isRefreshingSubscription;
+    private DateTimeOffset? _expiryWarningShownFor;
     private TrafficMode _trafficMode = TrafficMode.AllTraffic;
     private DateTimeOffset? _lastRefresh;
     private string _vpnLogText = "";
@@ -60,6 +63,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             Interval = TimeSpan.FromSeconds(15)
         };
         _serverAvailabilityTimer.Tick += async (_, _) => { await RefreshServerAvailabilityAsync(); RefreshSubscriptionStatus(); };
+        _subscriptionRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _subscriptionRefreshTimer.Tick += async (_, _) => await RefreshSubscriptionInBackgroundAsync();
 
         RefreshCommand = new RelayCommand(RefreshAsync, () => !IsBusy && !IsConnected);
         PowerCommand = new RelayCommand(ToggleConnectionAsync);
@@ -78,6 +83,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? SettingsSaved;
+    public event EventHandler<string>? SubscriptionNotificationRequested;
 
     public ObservableCollection<VpnProfile> Profiles { get; } = new();
     public ObservableCollection<InstalledApplication> AvailableApplications { get; } = new();
@@ -391,7 +397,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         var settings = await _settingsStore.LoadAsync();
         var secrets = await _secretSettingsStore.LoadAsync();
-        SubscriptionUrl = settings.SubscriptionUrl;
+        SubscriptionUrl = string.IsNullOrWhiteSpace(settings.SubscriptionUrl) ? secrets.SubscriptionUrl : settings.SubscriptionUrl;
         AuthApiBaseUrl = settings.AuthApiBaseUrl;
         _authDeviceId = string.IsNullOrWhiteSpace(secrets.AuthDeviceId)
             ? Guid.NewGuid().ToString("N")
@@ -411,7 +417,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         RefreshDerivedStatus();
 
         await RefreshServerAvailabilityAsync();
+        await RefreshSubscriptionInBackgroundAsync();
         _serverAvailabilityTimer.Start();
+        _subscriptionRefreshTimer.Start();
     }
 
     public void Dispose()
@@ -483,6 +491,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    public async Task RefreshSubscriptionInBackgroundAsync()
+    {
+        if (_isRefreshingSubscription || string.IsNullOrWhiteSpace(SubscriptionUrl))
+        {
+            return;
+        }
+
+        _isRefreshingSubscription = true;
+        try
+        {
+            var subscription = await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl);
+            ApplySubscription(subscription);
+            LastRefresh = DateTimeOffset.Now;
+            await SaveAsync(setStatus: false);
+            RefreshDerivedStatus();
+        }
+        catch
+        {
+            // Keep the last successful subscription data visible while the endpoint is unavailable.
+        }
+        finally
+        {
+            _isRefreshingSubscription = false;
+        }
+    }
     private async Task GenerateLoginCodeAsync()
     {
         await RunBusyAsync(async () =>
@@ -905,6 +938,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void ApplySubscription(SubscriptionLoadResult subscription)
     {
+        var previousExpiresAt = Subscription.ExpiresAt;
+
         ReplaceProfiles(subscription.Profiles);
         _ = RefreshServerAvailabilityAsync();
 
@@ -915,6 +950,36 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             AuthorizedAt = AccountSession.AuthorizedAt,
             Subscription = subscription.Summary
         };
+
+        NotifyAboutSubscriptionChange(previousExpiresAt, subscription.Summary.ExpiresAt);
+    }
+
+    private void NotifyAboutSubscriptionChange(DateTimeOffset? previousExpiresAt, DateTimeOffset? currentExpiresAt)
+    {
+        if (currentExpiresAt is null)
+        {
+            return;
+        }
+
+        var currentLocal = currentExpiresAt.Value.ToLocalTime();
+        if (previousExpiresAt is { } previous && currentLocal > previous.ToLocalTime())
+        {
+            var extendedDays = Math.Max(1, (currentLocal.Date - previous.ToLocalTime().Date).Days);
+            _expiryWarningShownFor = null;
+            SubscriptionNotificationRequested?.Invoke(
+                this,
+                $"Подписка продлена на {extendedDays} дн. Новая дата: {currentLocal:dd.MM.yyyy}.");
+            return;
+        }
+
+        var daysLeft = (currentLocal.Date - DateTime.Now.Date).Days;
+        if (daysLeft is >= 0 and <= 3 && _expiryWarningShownFor != currentExpiresAt)
+        {
+            _expiryWarningShownFor = currentExpiresAt;
+            SubscriptionNotificationRequested?.Invoke(
+                this,
+                "До окончания подписки осталось менее 3 дней. Продлите подписку, иначе VPN перестанет работать.");
+        }
     }
 
     private void ReplaceProfiles(IEnumerable<VpnProfile> profiles)

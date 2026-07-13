@@ -474,7 +474,17 @@
             <Button Grid.Column="1" Style="{StaticResource TitleBarButton}" Content="−" ToolTip="Свернуть" Click="OnMinimizeClick" />
             <Button Grid.Column="2" Style="{StaticResource TitleBarButton}" Content="×" ToolTip="Скрыть в трей" Click="OnHideToTrayClick" />
         </Grid>
-        <Border x:Name="SaveToast" Grid.ZIndex="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,28" Padding="16,10" Background="#E71C3552" BorderBrush="#608FC9FF" BorderThickness="1" CornerRadius="10" Opacity="0" Visibility="Collapsed" IsHitTestVisible="False">
+        <Grid Grid.ZIndex="60" Visibility="{Binding IsSubscriptionNotificationOpen, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border Background="#C8081429" />
+            <Border Width="410" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#F5102442" BorderBrush="#6F77B7FF" BorderThickness="1" CornerRadius="16" Padding="22">
+                <Border.Effect><DropShadowEffect BlurRadius="30" ShadowDepth="10" Opacity="0.45" Color="#000000" /></Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="CosmoNet" Foreground="#B9D9FF" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                    <TextBlock Text="{Binding SubscriptionNotificationText, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="White" FontSize="15" TextWrapping="Wrap" TextAlignment="Center" Margin="0,14,0,20" />
+                    <Button Content="ОК" Width="104" HorizontalAlignment="Center" Click="OnCloseSubscriptionNotificationClick" />
+                </StackPanel>
+            </Border>
+        </Grid>        <Border x:Name="SaveToast" Grid.ZIndex="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,28" Padding="16,10" Background="#E71C3552" BorderBrush="#608FC9FF" BorderThickness="1" CornerRadius="10" Opacity="0" Visibility="Collapsed" IsHitTestVisible="False">
             <TextBlock Text="Настройки сохранены" Foreground="White" FontWeight="SemiBold" />
         </Border>
     </Grid>

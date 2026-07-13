@@ -17,6 +17,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isSubscriptionDialogOpen;
     private bool _exitRequested;
     private CancellationTokenSource? _toastCancellation;
+    private bool _isSubscriptionNotificationOpen;
+    private string _subscriptionNotificationText = "";
     private readonly Forms.NotifyIcon _trayIcon;
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -38,6 +40,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsSubscriptionNotificationOpen
+    {
+        get => _isSubscriptionNotificationOpen;
+        private set
+        {
+            if (_isSubscriptionNotificationOpen == value)
+            {
+                return;
+            }
+
+            _isSubscriptionNotificationOpen = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSubscriptionNotificationOpen)));
+        }
+    }
+
+    public string SubscriptionNotificationText
+    {
+        get => _subscriptionNotificationText;
+        private set
+        {
+            if (_subscriptionNotificationText == value)
+            {
+                return;
+            }
+
+            _subscriptionNotificationText = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SubscriptionNotificationText)));
+        }
+    }
     public bool IsSubscriptionDialogOpen
     {
         get => _isSubscriptionDialogOpen;
@@ -59,6 +90,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         InitializeComponent();
         DataContext = _viewModel;
         _viewModel.SettingsSaved += OnSettingsSaved;
+        _viewModel.SubscriptionNotificationRequested += OnSubscriptionNotificationRequested;
         Loaded += OnLoaded;
         Closing += OnWindowClosing;
         Closed += OnWindowClosed;
@@ -95,9 +127,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsMenuOpen = false;
     }
 
-    private void OnSubscriptionCardClick(object sender, RoutedEventArgs e)
+    private async void OnSubscriptionCardClick(object sender, RoutedEventArgs e)
     {
         IsSubscriptionDialogOpen = true;
+        await _viewModel.RefreshSubscriptionInBackgroundAsync();
     }
 
     private void OnCloseSubscriptionDialogClick(object sender, RoutedEventArgs e)
@@ -210,6 +243,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Close();
     }
 
+    private void OnSubscriptionNotificationRequested(object? sender, string message)
+    {
+        if (!IsVisible || WindowState == WindowState.Minimized)
+        {
+            ShowFromTray();
+        }
+
+        SubscriptionNotificationText = message;
+        IsSubscriptionNotificationOpen = true;
+    }
+
+    private void OnCloseSubscriptionNotificationClick(object sender, RoutedEventArgs e)
+    {
+        IsSubscriptionNotificationOpen = false;
+    }
     private async void OnSettingsSaved(object? sender, EventArgs e)
     {
         _toastCancellation?.Cancel();
