@@ -41,6 +41,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private string _diagnosticText = "Диагностика еще не запускалась.";
     private string _lastConfigPath = AppPaths.GeneratedConfigPath;
     private AccountSession _accountSession = new();
+    private bool _isAuthMenuOpen;
     private bool _isBusy;
     private bool _isConnected;
     private bool _isServerAvailable;
@@ -79,6 +80,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         SaveCommand = new RelayCommand(SaveAsync, () => !IsBusy);
         OpenDataFolderCommand = new RelayCommand(OpenDataFolderAsync);
         BrowseApplicationCommand = new RelayCommand(BrowseApplicationAsync, () => !IsBusy);
+        ShowAuthMethodsCommand = new RelayCommand(ShowAuthMethods, () => !IsBusy && !AccountSession.IsAuthorized);
         LoginCommand = new RelayCommand(LoginAsync, () => !IsBusy && !AccountSession.IsAuthorized);
         LogoutCommand = new RelayCommand(LogoutAsync, () => !IsBusy && AccountSession.IsAuthorized);
         RunDiagnosticsCommand = new RelayCommand(RunDiagnosticsAsync, () => !IsBusy);
@@ -102,6 +104,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand SaveCommand { get; }
     public ICommand OpenDataFolderCommand { get; }
     public ICommand BrowseApplicationCommand { get; }
+    public ICommand ShowAuthMethodsCommand { get; }
     public ICommand LoginCommand { get; }
     public ICommand LogoutCommand { get; }
     public ICommand RunDiagnosticsCommand { get; }
@@ -240,6 +243,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public SubscriptionSummary Subscription => AccountSession.Subscription ?? SubscriptionSummary.Empty;
     public string AccountButtonText => AccountSession.IsAuthorized ? "\u0412\u0445\u043e\u0434 \u0432\u044b\u043f\u043e\u043b\u043d\u0435\u043d" : "\u0412\u0445\u043e\u0434";
     public bool IsAuthorized => AccountSession.IsAuthorized;
+    public bool IsAuthMenuOpen
+    {
+        get => _isAuthMenuOpen;
+        set => SetField(ref _isAuthMenuOpen, value);
+    }
+
 
 
     public string AccountDisplayText => AccountSession.IsAuthorized
@@ -643,8 +652,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             _isRefreshingSubscription = false;
         }
     }
+    private Task ShowAuthMethods() { IsAuthMenuOpen = true; return Task.CompletedTask; }
+
     private async Task LoginAsync()
     {
+        IsAuthMenuOpen = false;
         if (string.IsNullOrWhiteSpace(AuthApiBaseUrl)) { StatusText = "Authorization API is not configured."; return; }
         await RunBusyAsync(async () =>
         {
@@ -1278,6 +1290,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ((RelayCommand)DisconnectCommand).RaiseCanExecuteChanged();
         ((RelayCommand)SaveCommand).RaiseCanExecuteChanged();
         ((RelayCommand)BrowseApplicationCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)ShowAuthMethodsCommand).RaiseCanExecuteChanged();
         ((RelayCommand)LoginCommand).RaiseCanExecuteChanged();
         ((RelayCommand)LogoutCommand).RaiseCanExecuteChanged();
         ((RelayCommand)RunDiagnosticsCommand).RaiseCanExecuteChanged();

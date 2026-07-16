@@ -5,6 +5,28 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
+        <Style x:Key="AuthButton" TargetType="Button">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="#2D5D9AFF" />
+            <Setter Property="BorderBrush" Value="#7EB8FF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="13,7" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" /></Border></ControlTemplate></Setter.Value></Setter>
+        </Style>
+
+        <Style x:Key="AuthMethodButton" TargetType="Button">
+            <Setter Property="Background" Value="#221C416D" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#467EB8ED" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10" Padding="{TemplateBinding Padding}"><ContentPresenter /></Border></ControlTemplate></Setter.Value></Setter>
+        </Style>
+
         <Style x:Key="IconButton" TargetType="Button">
             <Setter Property="Width" Value="42" />
             <Setter Property="Height" Value="42" />
@@ -145,10 +167,28 @@
                         <Rectangle Height="2" RadiusX="1" RadiusY="1" Fill="White" />
                     </StackPanel>
                 </Button>
-                <TextBlock Grid.Column="1" Text="CosmoNet" Foreground="White" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Center" />
-
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="{Binding AccountButtonText}" Command="{Binding LoginCommand}" Padding="10,6" MinWidth="58" ToolTip="Telegram sign-in" />
+                    <Grid>
+                        <Button x:Name="AuthButton" Content="{Binding AccountButtonText}" Command="{Binding ShowAuthMethodsCommand}"
+                                Style="{StaticResource AuthButton}" MinWidth="112" ToolTip="&#x412;&#x43E;&#x439;&#x442;&#x438; &#x432; CosmoNet" />
+                        <Popup PlacementTarget="{Binding ElementName=AuthButton}" Placement="Bottom" StaysOpen="False"
+                               IsOpen="{Binding IsAuthMenuOpen}" AllowsTransparency="True">
+                            <Border Width="164" Margin="0,10,0,0" Padding="10" Background="#F9122746" BorderBrush="#6E8CC7FF" BorderThickness="1" CornerRadius="14">
+                                <StackPanel>
+                                    <TextBlock Text="&#x412;&#x43E;&#x439;&#x442;&#x438; &#x441; &#x43F;&#x43E;&#x43C;&#x43E;&#x449;&#x44C;&#x44E;" Foreground="#BFD9F7" FontSize="12" Margin="2,0,0,9" />
+                                    <Button Command="{Binding LoginCommand}" Style="{StaticResource AuthMethodButton}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="30" Height="30" CornerRadius="15" Background="#2A8FD5" Margin="0,0,10,0">
+                                                <Path Width="17" Height="17" Stretch="Uniform" Fill="White" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      Data="M1,8.6 L20,1.2 C20.8,0.9 21.5,1.6 21.2,2.4 L15.3,20.2 C15,21.1 13.8,21.3 13.2,20.6 L9.4,16.3 L7.1,18.5 C6.4,19.1 5.3,18.7 5.2,17.8 L4.8,13.4 L1.4,11.3 C0.5,10.8 0.3,9.1 1,8.6 Z M6.6,12.4 L7.1,16.6 L9.3,14.5 L15.9,6.4 Z" />
+                                            </Border>
+                                            <TextBlock Text="Telegram" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
                     <Button Content="&#x412;&#x44B;&#x439;&#x442;&#x438;" Command="{Binding LogoutCommand}" Margin="8,0,0,0" Padding="10,6"
                             Visibility="{Binding IsAuthorized, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 </StackPanel>
@@ -237,15 +277,12 @@
                             <!-- The tab content area is a few pixels narrower because of the right-side scroll area.
                                  Shift the complete subscription card slightly right so its visible center matches
                                  the power button and the true center line of the application window. -->
-                            <Button Width="348" HorizontalAlignment="Center" Margin="0,28,0,0" Padding="0" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="OnSubscriptionCardClick" AutomationProperties.Name="Детали подписки">
-                                <Button.RenderTransform>
-                                    <TranslateTransform X="3" />
-                                </Button.RenderTransform>
-                                <Border Width="348" Background="#4A173866" CornerRadius="14" Padding="15,13" BorderBrush="#3474A5D8" BorderThickness="1">
+                            <Button Width="236" HorizontalAlignment="Center" Margin="0,22,0,0" Padding="0" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="OnSubscriptionCardClick" AutomationProperties.Name="Детали подписки">
+                                <Border Width="236" Background="#56142F58" CornerRadius="16" Padding="15,13" BorderBrush="#3C74A5D8" BorderThickness="1">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="42" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                        <Border Width="36" Height="36" Background="#345B9CFF" CornerRadius="18" VerticalAlignment="Center">
-                                            <Path Width="18" Height="18" Stretch="Uniform" Fill="#B8DAFF" Data="M4,2 L4,5 M12,2 L12,5 M3,4 L13,4 L13,15 L3,15 Z M5,8 L7,8 M9,8 L11,8 M5,11 L7,11 M9,11 L11,11" />
+                                        <Border Width="36" Height="36" Background="#2B6AA6E8" CornerRadius="18" VerticalAlignment="Center">
+                                            <TextBlock Text="&#x27F3;" Foreground="#D9EDFF" FontSize="21" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>
                                         <StackPanel Grid.Column="1" Margin="11,0,0,0"><TextBlock Text="Подписка" FontWeight="SemiBold" Foreground="White" /><TextBlock Text="Действует до" Foreground="#9FB9D7" FontSize="11" Margin="0,2,0,0" /><TextBlock Text="{Binding SubscriptionExpiresText}" Foreground="#77B7FF" FontWeight="SemiBold" FontSize="14" /></StackPanel>
                                         <TextBlock Grid.Column="2" Text="›" Foreground="White" FontSize="30" VerticalAlignment="Center" />
