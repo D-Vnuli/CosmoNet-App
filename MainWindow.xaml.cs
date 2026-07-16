@@ -250,20 +250,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         });
     }
 
-    private void OnTelegramPopupOpened(object? sender, EventArgs e)
-    {
-        TelegramPopupSurface.Opacity = 0;
-        var transforms = (TransformGroup)TelegramPopupSurface.RenderTransform;
-        var scale = (ScaleTransform)transforms.Children[0];
-        var translate = (TranslateTransform)transforms.Children[1];
-        scale.ScaleX = 0.96;
-        scale.ScaleY = 0.96;
-        translate.Y = -8;
-        TelegramPopupSurface.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
-        scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.96, 1, TimeSpan.FromMilliseconds(180)));
-        scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.96, 1, TimeSpan.FromMilliseconds(180)));
-        translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-8, 0, TimeSpan.FromMilliseconds(180)));
-    }
     private Task ToggleMenuAsync()
     {
         IsMenuOpen = !IsMenuOpen;

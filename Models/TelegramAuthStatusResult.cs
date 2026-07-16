@@ -1,4 +1,4 @@
-﻿namespace CosmoNet.App.Models;
+namespace CosmoNet.App.Models;
 
 public sealed class TelegramAuthStatusResult
 {

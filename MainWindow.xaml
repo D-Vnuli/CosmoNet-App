@@ -136,7 +136,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="44" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="44" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Button Style="{StaticResource IconButton}" Command="{Binding ToggleMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}" ToolTip="Меню" AutomationProperties.Name="Главное меню">
                     <StackPanel Width="18">
@@ -147,46 +147,12 @@
                 </Button>
                 <TextBlock Grid.Column="1" Text="CosmoNet" Foreground="White" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Center" />
 
-                <ToggleButton x:Name="TelegramToggle" Grid.Column="2" Width="42" Height="42" Padding="0" Background="#261F4E78" BorderBrush="#3F8AB5E3" BorderThickness="1" ToolTip="Telegram">
-                    <ToggleButton.Template>
-                        <ControlTemplate TargetType="ToggleButton">
-                            <Grid>
-                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12">
-                                    <Grid>
-                                        <Path x:Name="TelegramIcon" Width="19" Height="19" Stretch="Uniform" Fill="White" Data="M1,8.6 L20,1.2 C20.8,0.9 21.5,1.6 21.2,2.4 L15.3,20.2 C15,21.1 13.8,21.3 13.2,20.6 L9.4,16.3 L7.1,18.5 C6.4,19.1 5.3,18.7 5.2,17.8 L4.8,13.4 L1.4,11.3 C0.5,10.8 0.3,9.1 1,8.6 Z M6.6,12.4 L7.1,16.6 L9.3,14.5 L15.9,6.4 Z" />
-                                        <Border x:Name="Avatar" Width="28" Height="28" CornerRadius="14" Background="#386CA6FF" Visibility="Collapsed">
-                                            <TextBlock Text="{Binding AccountDisplayText}" FontSize="10" FontWeight="SemiBold" Foreground="White" TextTrimming="CharacterEllipsis" TextAlignment="Center" VerticalAlignment="Center" Margin="3,0" />
-                                        </Border>
-                                    </Grid>
-                                </Border>
-                                <Ellipse x:Name="OnlineDot" Width="9" Height="9" Fill="#35D587" Stroke="#07142B" StrokeThickness="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-2,-2" Visibility="Collapsed" />
-                            </Grid>
-                            <ControlTemplate.Triggers>
-                                <DataTrigger Binding="{Binding AccountSession.IsAuthorized}" Value="True">
-                                    <Setter TargetName="TelegramIcon" Property="Visibility" Value="Collapsed" />
-                                    <Setter TargetName="Avatar" Property="Visibility" Value="Visible" />
-                                    <Setter TargetName="OnlineDot" Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </ToggleButton.Template>
-                </ToggleButton>
-
-                <Popup PlacementTarget="{Binding ElementName=TelegramToggle}" Placement="Bottom" StaysOpen="False" IsOpen="{Binding IsChecked, ElementName=TelegramToggle}" AllowsTransparency="True" Opened="OnTelegramPopupOpened">
-                    <Border x:Name="TelegramPopupSurface" Width="272" Margin="0,10,0,0" Background="#F9112340" BorderBrush="#428AB5E3" BorderThickness="1" CornerRadius="14" Padding="16" RenderTransformOrigin="0.88,0"><Border.RenderTransform><TransformGroup><ScaleTransform ScaleX="0.96" ScaleY="0.96" /><TranslateTransform Y="-8" /></TransformGroup></Border.RenderTransform>
-                        <StackPanel>
-                            <TextBlock Text="{Binding AccountDisplayText}" FontWeight="SemiBold" Foreground="White" />
-                            <TextBlock Text="{Binding AuthStatus}" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="#B9CCE5" FontSize="12" />
-                            <TextBlock Text="{Binding LoginCode}" FontSize="24" FontWeight="SemiBold" Foreground="White" Margin="0,12,0,0" HorizontalAlignment="Center" />
-                            <Grid Margin="0,12,0,0">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <Button Grid.Column="0" Content="Получить код" Command="{Binding GenerateLoginCodeCommand}" Padding="8,6" FontSize="12" />
-                                <Button Grid.Column="2" Content="Проверить" Command="{Binding CheckAuthStatusCommand}" Padding="8,6" FontSize="12" />
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-                </Popup>
-            </Grid>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="{Binding AccountButtonText}" Command="{Binding LoginCommand}" Padding="10,6" MinWidth="58" ToolTip="Telegram sign-in" />
+                    <Button Content="&#x412;&#x44B;&#x439;&#x442;&#x438;" Command="{Binding LogoutCommand}" Margin="8,0,0,0" Padding="10,6"
+                            Visibility="{Binding IsAuthorized, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                </StackPanel>
+</Grid>
 
             <TabControl x:Name="MainViews" Grid.Row="1" Margin="0,12,0,0" Background="Transparent" BorderThickness="0">
                 <TabControl.Template>
