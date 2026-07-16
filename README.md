@@ -1,66 +1,136 @@
-﻿# CosmoNet Windows App
+# CosmoNet для Windows
 
-Native Windows client for CosmoNet subscriptions. The app is built on WPF and prepares a `sing-box` configuration from the existing `/sub/{sub_id}` subscription flow used by the Telegram bot.
+**CosmoNet** - нативный Windows-клиент VPN для подписок CosmoNet. Приложение загружает ссылку подписки или VLESS-конфиг, запускает защищённое подключение через `sing-box` и показывает актуальное состояние доступа из 3X-UI.
 
-## Current Stage
+Проект развивается в отдельной ветке GitHub: [`codex/cosmonet-windows-app`](https://github.com/D-Vnuli/MyProjectPlace/tree/codex/cosmonet-windows-app).
 
-Stage 7: app-side Telegram auth contract, subscription metadata sync, local security, split tunneling, and sing-box diagnostics.
+## Возможности
 
-Implemented:
+- Подключение в один клик через TUN-интерфейс Windows.
+- Поддержка VLESS-профилей с транспортами **Reality**, **TCP** и **WebSocket**.
+- Автоматический выбор доступного профиля `sing-box urltest` среди конфигураций подписки.
+- Загрузка HTTP(S)-подписки и отдельного VLESS-конфига.
+- Проверка конфигурации перед запуском VPN.
+- Режимы трафика: весь трафик через VPN или только выбранные `.exe`-приложения.
+- Выбор приложений через Проводник, отображение их иконок и удаление из списка.
+- Актуальные сведения о подписке напрямую из 3X-UI: активность, срок, лимит устройств и бессрочный доступ.
+- Уведомления об окончании и продлении подписки.
+- Логи `sing-box` в реальном времени, очистка и сохранение в `.txt`.
+- Форма обратной связи с отправкой обращения в поддержку.
+- Один экземпляр приложения, сворачивание в системный трей и открытие по клику на значок.
 
-- Main screen with fixed subscription expiry, subscription status, server status, and connection state blocks.
-- One-click power button: gray means disconnected, blue means connecting, green means connected.
-- Telegram authorization UX with backend URL, auth code request, status polling, and local fallback code while backend is not configured.
-- Account/session and subscription summary models for tariff, expiry date, device limit, traffic usage, and sync state.
-- Reads subscription metadata from HTTP headers such as `subscription-userinfo` and `profile-title` when the subscription endpoint provides them.
-- Collapsible subscription details so the main screen stays compact.
-- Separate tabs for the main dashboard, app routing, and instructions.
-- Traffic mode selection: all traffic through VPN or only selected applications.
-- Local discovery of running/installed `.exe` applications for split tunneling selection.
-- Manual process entry for apps that are not found automatically, for example `discord.exe` or `chrome.exe`.
-- Lazy app loading: saved selected processes appear instantly, full app scan runs only when requested.
-- `sing-box` route generation for selected applications using `process_name` rules.
-- A diagnostics tab for checking core availability, admin rights, generated config path, protected storage path, and `sing-box check -c` output.
-- Connection startup validates the generated config with `sing-box check -c` before running the VPN core.
-- Subscription URL is stored outside public settings in a Windows DPAPI-protected local file.
-- Public settings stay in `%AppData%\CosmoNet\settings.json`; protected secrets stay in `%AppData%\CosmoNet\secrets.dat`.
+## Интерфейс
 
-Not implemented yet:
+Главный экран построен вокруг состояния подключения: центральная кнопка, статус VPN, доступность сервера, выбранная страна и режим маршрутизации. Подробности подписки открываются отдельным модальным окном, поэтому главный экран остаётся компактным.
 
-- Server-side Telegram bot confirmation endpoints for `POST /api/app/auth/start` and `GET /api/app/auth/status`.
-- Real subscription metadata API for expiry date and user plan details.
-- Bundled installer and automatic `sing-box` core delivery.
-- End-to-end runtime validation with a real CosmoNet server profile.
-- In-app live traffic counters and process-level routing verification.
+Окно имеет фиксированный размер и не растягивается. Интерфейс использует тёмную космическую тему CosmoNet и работает без прокрутки на главном экране.
 
-## Local Development
+## Архитектура
+
+```text
+CosmoNet.App
+├── WPF-интерфейс
+├── SubscriptionService         загрузка и разбор подписок
+├── SubscriptionMetadataApi     данные о подписке из 3X-UI
+├── SingBoxConfigBuilder        генерация конфигурации sing-box
+├── SingBoxService              проверка и запуск VPN-ядра
+├── VpnLogService               чтение, маскирование и экспорт логов
+├── InstalledApplicationsService выбор приложений для VPN
+└── SecretSettingsStore         защищённое хранение локальных секретов
+```
+
+Приложение не содержит API-токен 3X-UI. Оно обращается к серверному read-only API, который получает из 3X-UI только необходимые сведения о клиенте. Идентификатором служит `subId` ссылки подписки или UUID из VLESS-конфига.
+
+## Требования
+
+- Windows 10 или Windows 11 x64.
+- .NET 9 SDK - для сборки из исходного кода.
+- Права администратора Windows - для создания TUN-интерфейса.
+- Активная подписка CosmoNet или корректный VLESS-конфиг.
+- `sing-box.exe` в `Resources\sing-box\sing-box.exe` при запуске из исходников.
+
+> `sing-box.exe` исключён из Git. Установщик или разработчик должен разместить совместимую версию ядра в указанной папке.
+
+## Быстрый старт
+
+### Клонирование ветки приложения
 
 ```powershell
-dotnet build D:\AI\MyProjectPlace\CosmoNet-App\CosmoNet.App.sln
-dotnet run --project D:\AI\MyProjectPlace\CosmoNet-App\CosmoNet.App.csproj
+git clone --branch codex/cosmonet-windows-app --single-branch https://github.com/D-Vnuli/MyProjectPlace.git
+cd MyProjectPlace\CosmoNet-App
 ```
 
-After a debug build, the executable is here:
+### Сборка
+
+```powershell
+dotnet build .\CosmoNet.App.sln
+```
+
+### Запуск
+
+```powershell
+.\bin\Debug\net9.0-windows\CosmoNet.App.exe
+```
+
+Для разработки можно запустить проект напрямую:
+
+```powershell
+dotnet run --project .\CosmoNet.App.csproj
+```
+
+## Подключение к подписке
+
+1. Откройте карточку **«Подписка»**.
+2. В разделе режима разработки вставьте ссылку вида `https://.../sub/{subId}` или VLESS-конфиг.
+3. Нажмите **«Загрузить»** или **«Обновить»**.
+4. Вернитесь на главный экран и нажмите кнопку подключения.
+
+Данные подписки обновляются автоматически каждые 30 секунд и при открытии окна подписки.
+
+## Серверная часть
+
+Для корректного отображения статуса, срока действия и количества устройств сервер CosmoNet должен предоставлять endpoint:
 
 ```text
-D:\AI\MyProjectPlace\CosmoNet-App\bin\Debug\net9.0-windows\CosmoNet.App.exe
+GET /api/app/subscription/device-limit?subId={subId}
+GET /api/app/subscription/device-limit?clientId={uuid}
 ```
 
-For real VPN startup, place the Windows `sing-box.exe` binary here:
+Ответ содержит только пользовательские метаданные:
+
+```json
+{
+  "deviceLimit": 3,
+  "isEnabled": true,
+  "expiresAtUnixMilliseconds": 1784840400000
+}
+```
+
+Endpoint разворачивается рядом с 3X-UI и использует серверный API-токен. Токен 3X-UI не передаётся в Windows-клиент и не должен попадать в Git.
+
+## Локальные данные и безопасность
+
+- Ссылка подписки, токен авторизации и идентификатор устройства хранятся через Windows DPAPI в `%AppData%\CosmoNet\secrets.dat`.
+- Обычные настройки хранятся в `%AppData%\CosmoNet\settings.json`.
+- Сгенерированная конфигурация и журналы находятся в каталоге данных CosmoNet.
+- Пользовательские диагностические логи маскируют IP-адреса назначения.
+- Не публикуйте ссылки подписок, конфигурации VLESS, файлы настроек и логи с приватными данными.
+
+## Структура проекта
 
 ```text
-D:\AI\MyProjectPlace\CosmoNet-App\Resources\sing-box\sing-box.exe
+CosmoNet-App/
+├── Models/                   модели подписки, профилей и настроек
+├── Resources/
+│   ├── cosmic-background.png фон интерфейса
+│   └── sing-box/             VPN-ядро при локальном запуске
+├── Services/                 VPN, подписка, маршрутизация и хранение
+├── ViewModels/               состояние и команды интерфейса
+├── MainWindow.xaml           главное окно WPF
+├── CosmoNet.App.csproj       проект .NET 9 / WPF
+└── CosmoNet.App.sln          решение Visual Studio
 ```
 
-TUN mode requires running the app as administrator.
+## Состояние проекта
 
-## Security Notes
-
-- Do not commit `.env`, subscription URLs, Telegram identifiers, generated configs, or local settings.
-- Subscription URLs, auth device id, and auth tokens live in the DPAPI-protected `secrets.dat`, not in `settings.json`.
-- The app stores selected process names locally; absolute app paths are only used for local display.
-- The `sing-box` binary is intentionally ignored by git and should be supplied by the installer or local developer setup.
-
-
-
-
+CosmoNet для Windows находится в активной разработке. Реализованные функции предназначены для использования с инфраструктурой CosmoNet и 3X-UI; перед выпуском публичной версии требуется отдельная упаковка установщика и финальная проверка на целевых конфигурациях Windows.
