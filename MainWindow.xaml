@@ -620,6 +620,8 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="16" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="16" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -653,7 +655,19 @@
                         <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SubscriptionModalDeviceLimitText}" Foreground="White" VerticalAlignment="Center" />
 
                     </Grid>
-                    <Border Grid.Row="4" Background="#6113284A" BorderBrush="#2F6E9CCB" BorderThickness="1" CornerRadius="12" Padding="14" Visibility="{Binding ShowDevelopmentSubscriptionControls, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Border Grid.Row="4" Background="#4D173866" BorderBrush="#3C74A5D8" BorderThickness="1" CornerRadius="12" Padding="14">
+                        <StackPanel>
+                            <TextBlock Text="&#x41A;&#x443;&#x43F;&#x438;&#x442;&#x44C; &#x43F;&#x43E;&#x434;&#x43F;&#x438;&#x441;&#x43A;&#x443;" Foreground="White" FontSize="16" FontWeight="SemiBold" />
+                            <TextBlock Text="&#x412;&#x44B;&#x431;&#x435;&#x440;&#x438;&#x442;&#x435; &#x43F;&#x43E;&#x434;&#x445;&#x43E;&#x434;&#x44F;&#x449;&#x438;&#x439; &#x442;&#x430;&#x440;&#x438;&#x444;." Foreground="#AFC7E3" FontSize="11" Margin="0,4,0,12" />
+                            <UniformGrid Columns="2">
+                                <Button Margin="0,0,8,8" Padding="10,8"><StackPanel><TextBlock Text="Promo" FontWeight="SemiBold" /><TextBlock Text="7 &#x434;&#x43D;&#x435;&#x439; &#xB7; 1 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;&#x43E;" FontSize="10" Foreground="#B9CCE5" /><TextBlock Text="50 &#x20BD; &#xB7; 30 &#x2B50;" FontSize="11" Foreground="#77B7FF" Margin="0,3,0,0" /></StackPanel></Button>
+                                <Button Margin="0,0,0,8" Padding="10,8"><StackPanel><TextBlock Text="Lite" FontWeight="SemiBold" /><TextBlock Text="30 &#x434;&#x43D;&#x435;&#x439; &#xB7; 1 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;&#x43E;" FontSize="10" Foreground="#B9CCE5" /><TextBlock Text="129 &#x20BD; &#xB7; 79 &#x2B50;" FontSize="11" Foreground="#77B7FF" Margin="0,3,0,0" /></StackPanel></Button>
+                                <Button Margin="0,0,8,0" Padding="10,8"><StackPanel><TextBlock Text="Standard" FontWeight="SemiBold" /><TextBlock Text="30 &#x434;&#x43D;&#x435;&#x439; &#xB7; 3 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;&#x430;" FontSize="10" Foreground="#B9CCE5" /><TextBlock Text="199 &#x20BD; &#xB7; 119 &#x2B50;" FontSize="11" Foreground="#77B7FF" Margin="0,3,0,0" /></StackPanel></Button>
+                                <Button Padding="10,8"><StackPanel><TextBlock Text="Family" FontWeight="SemiBold" /><TextBlock Text="30 &#x434;&#x43D;&#x435;&#x439; &#xB7; 5 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;" FontSize="10" Foreground="#B9CCE5" /><TextBlock Text="279 &#x20BD; &#xB7; 169 &#x2B50;" FontSize="11" Foreground="#77B7FF" Margin="0,3,0,0" /></StackPanel></Button>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Row="6" Background="#6113284A" BorderBrush="#2F6E9CCB" BorderThickness="1" CornerRadius="12" Padding="14" Visibility="{Binding ShowDevelopmentSubscriptionControls, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <StackPanel>
                             <TextBlock Text="Режим разработки" Foreground="#B9D9FF" FontWeight="SemiBold" FontSize="12" />
                             <TextBox Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" Margin="0,10,0,0" ToolTip="Ссылка подписки" />
