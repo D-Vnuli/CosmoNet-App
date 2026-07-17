@@ -626,7 +626,7 @@
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <TextBlock Text="Подписка" Foreground="White" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="Закрыть" Padding="12,6" Click="OnCloseSubscriptionDialogClick" />
+                        <Button Grid.Column="1" Content="Закрыть" Style="{StaticResource AuthButton}" Padding="14,8" Click="OnCloseSubscriptionDialogClick" />
                     </Grid>
                     <Grid Grid.Row="2">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="185" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -655,23 +655,94 @@
                         <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SubscriptionModalDeviceLimitText}" Foreground="White" VerticalAlignment="Center" />
 
                     </Grid>
-                    <Border Grid.Row="4" Background="#4D173866" BorderBrush="#3C74A5D8" BorderThickness="1" CornerRadius="12" Padding="14">
+                    <Grid Grid.Row="4">
+                        <ToggleButton x:Name="PurchaseButton" HorizontalAlignment="Stretch" Padding="14,11" Background="#261F1A0A"
+                                BorderBrush="#D6A83F" BorderThickness="1.4" Cursor="Hand" ToolTip="&#x41A;&#x443;&#x43F;&#x438;&#x442;&#x44C; &#x43F;&#x43E;&#x434;&#x43F;&#x438;&#x441;&#x43A;&#x443;">
+                            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" /></Border></ControlTemplate></ToggleButton.Template>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <Grid Width="22" Height="20" Margin="0,0,9,0">
+                                    <Path Data="M1,2 L4,2 L6,13 L18,13 M7,6 L17,6 M8,9 L18,9" Stroke="#F6D77C" StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                                    <Ellipse Width="4" Height="4" Fill="#F6D77C" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="7,0,0,0" />
+                                    <Ellipse Width="4" Height="4" Fill="#F6D77C" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,1,0" />
+                                </Grid>
+                                <TextBlock Text="&#x41A;&#x443;&#x43F;&#x438;&#x442;&#x44C; &#x43F;&#x43E;&#x434;&#x43F;&#x438;&#x441;&#x43A;&#x443;" Foreground="#F6D77C" FontWeight="SemiBold" FontSize="15" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <Popup PlacementTarget="{Binding ElementName=PurchaseButton}" Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                               IsOpen="{Binding IsChecked, ElementName=PurchaseButton}">
+                            <Border Width="416" Margin="0,10,0,0" Padding="16" Background="#FA102442" BorderBrush="#D6A83F" BorderThickness="1" CornerRadius="14">
+                                <Border.Resources>
+                                    <Style TargetType="{x:Type RadioButton}">
+                                        <Setter Property="Height" Value="88" />
+                                        <Setter Property="Margin" Value="4" />
+                                        <Setter Property="Cursor" Value="Hand" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="RadioButton">
+                                                    <Border x:Name="TariffCard" Background="#171F38" BorderBrush="#D6A83F" BorderThickness="1" CornerRadius="11" Padding="12">
+                                                        <Grid>
+                                                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                                            <Border x:Name="CheckBadge" Width="19" Height="19" HorizontalAlignment="Right" VerticalAlignment="Top" Background="#52D18B" CornerRadius="10" Visibility="Collapsed">
+                                                                <Path Data="M5,10 L8,13 L14,6" Stroke="#102442" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                                                            </Border>
+                                                        </Grid>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsChecked" Value="True">
+                                                            <Setter TargetName="TariffCard" Property="Background" Value="#24445C3D" />
+                                                            <Setter TargetName="TariffCard" Property="BorderBrush" Value="#52D18B" />
+                                                            <Setter TargetName="CheckBadge" Property="Visibility" Value="Visible" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Border.Resources>
+                                <StackPanel>
+                                    <TextBlock Text="&#x412;&#x44B;&#x431;&#x435;&#x440;&#x438;&#x442;&#x435; &#x442;&#x430;&#x440;&#x438;&#x444;" Foreground="White" FontWeight="SemiBold" FontSize="16" HorizontalAlignment="Center" />
+                                    <UniformGrid Columns="2" Margin="0,12,0,12">
+                                        <RadioButton x:Name="PromoTariffButton" GroupName="Tariff" Tag="Promo" IsChecked="True" Checked="OnTariffSelectionClick"><StackPanel><TextBlock Text="Promo" Foreground="#F6D77C" FontWeight="SemiBold" /><TextBlock Text="7 &#x434;&#x43D;&#x435;&#x439; &#xB7; 50 &#x20BD;" Foreground="#D8E4F2" FontSize="11" Margin="0,3,0,0" /><TextBlock Text="1 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;&#x43E;" Foreground="#8FA8C7" FontSize="11" Margin="0,2,0,0" /></StackPanel></RadioButton>
+                                        <RadioButton x:Name="LiteTariffButton" GroupName="Tariff" Tag="Lite" Checked="OnTariffSelectionClick"><StackPanel><TextBlock Text="Lite" Foreground="#F6D77C" FontWeight="SemiBold" /><TextBlock Text="30 &#x434;&#x43D;&#x435;&#x439; &#xB7; 129 &#x20BD;" Foreground="#D8E4F2" FontSize="11" Margin="0,3,0,0" /><TextBlock Text="1 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;&#x43E;" Foreground="#8FA8C7" FontSize="11" Margin="0,2,0,0" /></StackPanel></RadioButton>
+                                        <RadioButton x:Name="StandardTariffButton" GroupName="Tariff" Tag="Standard" Checked="OnTariffSelectionClick"><StackPanel><TextBlock Text="Standard" Foreground="#F6D77C" FontWeight="SemiBold" /><TextBlock Text="30 &#x434;&#x43D;&#x435;&#x439; &#xB7; 199 &#x20BD;" Foreground="#D8E4F2" FontSize="11" Margin="0,3,0,0" /><TextBlock Text="3 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;&#x430;" Foreground="#8FA8C7" FontSize="11" Margin="0,2,0,0" /></StackPanel></RadioButton>
+                                        <RadioButton x:Name="FamilyTariffButton" GroupName="Tariff" Tag="Family" Checked="OnTariffSelectionClick"><StackPanel><TextBlock Text="Family" Foreground="#F6D77C" FontWeight="SemiBold" /><TextBlock Text="30 &#x434;&#x43D;&#x435;&#x439; &#xB7; 279 &#x20BD;" Foreground="#D8E4F2" FontSize="11" Margin="0,3,0,0" /><TextBlock Text="5 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;" Foreground="#8FA8C7" FontSize="11" Margin="0,2,0,0" /></StackPanel></RadioButton>
+                                    </UniformGrid>
+                                    <Border Background="#1B2A45" BorderBrush="#D6A83F" BorderThickness="1" CornerRadius="11" Padding="12" Margin="0,0,0,10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center"><TextBlock Text="&#x418;&#x442;&#x43E;&#x433;&#x43E;" Foreground="#D8E4F2" FontSize="13" /><TextBlock x:Name="TotalDetailsText" Text="Promo &#xB7; 1 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;&#x43E;" Foreground="#8FA8C7" FontSize="11" Margin="0,3,0,0" /></StackPanel>
+                                            <TextBlock x:Name="TotalPriceText" Grid.Column="1" Text="50 &#x20BD;" Foreground="#F6D77C" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+                                    <Button IsEnabled="False" Height="44" Background="Transparent" BorderBrush="#D6A83F" BorderThickness="1.4" Foreground="#F6D77C" FontWeight="SemiBold" FontSize="15" Content="&#x41E;&#x444;&#x43E;&#x440;&#x43C;&#x438;&#x442;&#x44C;">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="11"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                                <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.55" /></Trigger></ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <Border Grid.Row="6" Background="#4014294B" BorderBrush="#467EB8ED" BorderThickness="1" CornerRadius="14" Padding="16" Visibility="{Binding ShowDevelopmentSubscriptionControls, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <StackPanel>
-                            <TextBlock Text="&#x41A;&#x443;&#x43F;&#x438;&#x442;&#x44C; &#x43F;&#x43E;&#x434;&#x43F;&#x438;&#x441;&#x43A;&#x443;" Foreground="White" FontSize="16" FontWeight="SemiBold" />
-                            <TextBlock Text="&#x412;&#x44B;&#x431;&#x435;&#x440;&#x438;&#x442;&#x435; &#x43F;&#x43E;&#x434;&#x445;&#x43E;&#x434;&#x44F;&#x449;&#x438;&#x439; &#x442;&#x430;&#x440;&#x438;&#x444;." Foreground="#AFC7E3" FontSize="11" Margin="0,4,0,12" />
-                            <UniformGrid Columns="2">
-                                <Button Margin="0,0,8,8" Padding="10,8"><StackPanel><TextBlock Text="Promo" FontWeight="SemiBold" /><TextBlock Text="7 &#x434;&#x43D;&#x435;&#x439; &#xB7; 1 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;&#x43E;" FontSize="10" Foreground="#B9CCE5" /><TextBlock Text="50 &#x20BD; &#xB7; 30 &#x2B50;" FontSize="11" Foreground="#77B7FF" Margin="0,3,0,0" /></StackPanel></Button>
-                                <Button Margin="0,0,0,8" Padding="10,8"><StackPanel><TextBlock Text="Lite" FontWeight="SemiBold" /><TextBlock Text="30 &#x434;&#x43D;&#x435;&#x439; &#xB7; 1 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;&#x43E;" FontSize="10" Foreground="#B9CCE5" /><TextBlock Text="129 &#x20BD; &#xB7; 79 &#x2B50;" FontSize="11" Foreground="#77B7FF" Margin="0,3,0,0" /></StackPanel></Button>
-                                <Button Margin="0,0,8,0" Padding="10,8"><StackPanel><TextBlock Text="Standard" FontWeight="SemiBold" /><TextBlock Text="30 &#x434;&#x43D;&#x435;&#x439; &#xB7; 3 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;&#x430;" FontSize="10" Foreground="#B9CCE5" /><TextBlock Text="199 &#x20BD; &#xB7; 119 &#x2B50;" FontSize="11" Foreground="#77B7FF" Margin="0,3,0,0" /></StackPanel></Button>
-                                <Button Padding="10,8"><StackPanel><TextBlock Text="Family" FontWeight="SemiBold" /><TextBlock Text="30 &#x434;&#x43D;&#x435;&#x439; &#xB7; 5 &#x443;&#x441;&#x442;&#x440;&#x43E;&#x439;&#x441;&#x442;&#x432;" FontSize="10" Foreground="#B9CCE5" /><TextBlock Text="279 &#x20BD; &#xB7; 169 &#x2B50;" FontSize="11" Foreground="#77B7FF" Margin="0,3,0,0" /></StackPanel></Button>
-                            </UniformGrid>
-                        </StackPanel>
-                    </Border>
-                    <Border Grid.Row="6" Background="#6113284A" BorderBrush="#2F6E9CCB" BorderThickness="1" CornerRadius="12" Padding="14" Visibility="{Binding ShowDevelopmentSubscriptionControls, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <StackPanel>
-                            <TextBlock Text="Режим разработки" Foreground="#B9D9FF" FontWeight="SemiBold" FontSize="12" />
-                            <TextBox Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" Margin="0,10,0,0" ToolTip="Ссылка подписки" />
-                            <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Button Content="Загрузить" Command="{Binding RefreshCommand}" Grid.Column="0" /><Button Content="Обновить" Command="{Binding RefreshCommand}" Grid.Column="2" /></Grid>
+                            <StackPanel Orientation="Horizontal">
+                                <Border Width="28" Height="28" CornerRadius="14" Background="#2D5D9AFF" Margin="0,0,10,0">
+                                    <Path Data="M7,8 L11,12 L7,16 M13,16 L18,16" Stroke="White" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel>
+                                    <TextBlock Text="Режим разработки" Foreground="White" FontWeight="SemiBold" FontSize="14" />
+                                    <TextBlock Text="Личная ссылка подписки" Foreground="#AFC7E3" FontSize="11" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBox Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" Margin="0,14,0,0" ToolTip="Ссылка подписки" Background="#101F38" Foreground="#E6F1FF" BorderBrush="#467EB8ED" BorderThickness="1" Padding="12,9" />
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Button Content="Загрузить" Command="{Binding RefreshCommand}" Grid.Column="0" Style="{StaticResource AuthMethodButton}" HorizontalContentAlignment="Center" FontWeight="SemiBold" />
+                                <Button Content="Обновить" Command="{Binding RefreshCommand}" Grid.Column="2" Style="{StaticResource AuthButton}" HorizontalContentAlignment="Center" />
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </Grid>

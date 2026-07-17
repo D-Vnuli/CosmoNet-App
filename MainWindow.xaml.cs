@@ -19,6 +19,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _exitRequested;
     private CancellationTokenSource? _toastCancellation;
     private bool _isSubscriptionNotificationOpen;
+    private int _selectedTariffPrice = 50;
+    private string _selectedTariffName = "Promo";
+    private string _selectedTariffDevices = "1 \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e";
     private string _subscriptionNotificationText = "";
     private readonly Forms.NotifyIcon _trayIcon;
 
@@ -286,6 +289,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         IsSubscriptionDialogOpen = false;
     }
+
+    private void OnTariffSelectionClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.RadioButton { IsChecked: true } tariff)
+        {
+            return;
+        }
+
+        (_selectedTariffName, _selectedTariffPrice, _selectedTariffDevices) = (tariff.Tag as string) switch
+        {
+            "Lite" => ("Lite", 129, "1 \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e"),
+            "Standard" => ("Standard", 199, "3 \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430"),
+            "Family" => ("Family", 279, "5 \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432"),
+            _ => ("Promo", 50, "1 \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e")
+        };
+        UpdatePurchaseSummary();
+    }
+
+    private void UpdatePurchaseSummary()
+    {
+        if (TotalPriceText is null || TotalDetailsText is null)
+        {
+            return;
+        }
+
+        TotalPriceText.Text = $"{_selectedTariffPrice} \u20BD";
+        TotalDetailsText.Text = $"{_selectedTariffName} \u00B7 {_selectedTariffDevices}";
+    }
+
 
     private void OnSubscriptionDialogBackdropMouseDown(object sender, MouseButtonEventArgs e)
     {
