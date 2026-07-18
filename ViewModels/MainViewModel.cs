@@ -33,7 +33,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private const int DefaultProbePort = 443;
 
     private string _subscriptionUrl = "";
-    private string _authApiBaseUrl = "";
+    private string _authApiBaseUrl = AppSettings.DefaultAuthApiBaseUrl;
     private string _authDeviceId = "";
     private string _statusText = "Готов к настройке";
     private string _authStatus = "Войдите через Telegram, чтобы приложение могло получить вашу подписку.";
@@ -477,7 +477,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         var settings = await _settingsStore.LoadAsync();
         var secrets = await _secretSettingsStore.LoadAsync();
         SubscriptionUrl = string.IsNullOrWhiteSpace(settings.SubscriptionUrl) ? secrets.SubscriptionUrl : settings.SubscriptionUrl;
-        AuthApiBaseUrl = settings.AuthApiBaseUrl;
+        AuthApiBaseUrl = string.IsNullOrWhiteSpace(settings.AuthApiBaseUrl)
+            ? AppSettings.DefaultAuthApiBaseUrl
+            : settings.AuthApiBaseUrl;
         _authDeviceId = string.IsNullOrWhiteSpace(secrets.AuthDeviceId)
             ? Guid.NewGuid().ToString("N")
             : secrets.AuthDeviceId;
@@ -657,7 +659,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private async Task LoginAsync()
     {
         IsAuthMenuOpen = false;
-        if (string.IsNullOrWhiteSpace(AuthApiBaseUrl)) { StatusText = "Authorization API is not configured."; return; }
+        if (string.IsNullOrWhiteSpace(AuthApiBaseUrl)) { AuthStatus = "Сервис авторизации временно недоступен."; StatusText = "Не задан адрес API авторизации."; return; }
         await RunBusyAsync(async () =>
         {
             var result = await _telegramAuthApiClient.StartAsync(AuthApiBaseUrl, _authDeviceId);
