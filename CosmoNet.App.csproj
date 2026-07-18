@@ -7,12 +7,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Resources\cosmonet-app-icon.ico</ApplicationIcon>
   </PropertyGroup>
 
 
   <ItemGroup>
     <None Include="Resources\sing-box\sing-box.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Resources\sing-box\sing-box.exe')" />
     <Content Include="Resources\cosmic-background.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Resources\cosmonet-app-icon.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
