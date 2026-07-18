@@ -729,25 +729,7 @@
                             </Border>
                         </Popup>
                     </Grid>
-                    <Border Grid.Row="6" Background="#4014294B" BorderBrush="#467EB8ED" BorderThickness="1" CornerRadius="14" Padding="16" Visibility="{Binding ShowDevelopmentSubscriptionControls, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <StackPanel>
-                            <StackPanel Orientation="Horizontal">
-                                <Border Width="28" Height="28" CornerRadius="14" Background="#2D5D9AFF" Margin="0,0,10,0">
-                                    <Path Data="M7,8 L11,12 L7,16 M13,16 L18,16" Stroke="White" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <StackPanel>
-                                    <TextBlock Text="Режим разработки" Foreground="White" FontWeight="SemiBold" FontSize="14" />
-                                    <TextBlock Text="Личная ссылка подписки" Foreground="#AFC7E3" FontSize="11" Margin="0,2,0,0" />
-                                </StackPanel>
-                            </StackPanel>
-                            <TextBox Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" Margin="0,14,0,0" ToolTip="Ссылка подписки" Background="#101F38" Foreground="#E6F1FF" BorderBrush="#467EB8ED" BorderThickness="1" Padding="12,9" />
-                            <Grid Margin="0,12,0,0">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <Button Content="Загрузить" Command="{Binding RefreshCommand}" Grid.Column="0" Style="{StaticResource AuthMethodButton}" HorizontalContentAlignment="Center" FontWeight="SemiBold" />
-                                <Button Content="Обновить" Command="{Binding RefreshCommand}" Grid.Column="2" Style="{StaticResource AuthButton}" HorizontalContentAlignment="Center" />
-                            </Grid>
-                        </StackPanel>
-                    </Border>
+
                 </Grid>
             </Border>
         </Grid>

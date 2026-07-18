@@ -59,7 +59,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _isSubmittingFeedback;
 
     private const int MaximumLogTextLength = 250_000;
-    private const bool IsDevelopmentSubscriptionControlsEnabled = true;
 
     public MainViewModel()
     {
@@ -380,8 +379,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public string SubscriptionLastSyncText => Subscription.LastSyncedAt is null
         ? "Синхронизация еще не выполнялась"
         : $"Синхронизация: {Subscription.LastSyncedAt.Value.ToLocalTime():dd.MM.yyyy HH:mm}";
-
-    public bool ShowDevelopmentSubscriptionControls => IsDevelopmentSubscriptionControlsEnabled;
 
     public string SubscriptionModalStatusText => EffectiveSubscriptionStatus switch
     {
