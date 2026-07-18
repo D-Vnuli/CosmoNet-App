@@ -241,7 +241,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     public SubscriptionSummary Subscription => AccountSession.Subscription ?? SubscriptionSummary.Empty;
-    public string AccountButtonText => AccountSession.IsAuthorized ? "\u0412\u0445\u043e\u0434 \u0432\u044b\u043f\u043e\u043b\u043d\u0435\u043d" : "\u0412\u0445\u043e\u0434";
+    public string AccountButtonText => AccountSession.IsAuthorized
+        ? (string.IsNullOrWhiteSpace(AccountSession.DisplayName) ? "CosmoNet" : AccountSession.DisplayName)
+        : "Вход";
     public bool IsAuthorized => AccountSession.IsAuthorized;
     public bool IsAuthMenuOpen
     {

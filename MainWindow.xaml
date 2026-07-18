@@ -169,8 +169,10 @@
                 </Button>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <Grid>
-                        <Button x:Name="AuthButton" Content="{Binding AccountButtonText}" Command="{Binding ShowAuthMethodsCommand}"
-                                Style="{StaticResource AuthButton}" MinWidth="112" ToolTip="&#x412;&#x43E;&#x439;&#x442;&#x438; &#x432; CosmoNet" />
+                        <Button x:Name="AuthButton" Command="{Binding ShowAuthMethodsCommand}"
+                                Style="{StaticResource AuthButton}" MinWidth="112" MaxWidth="190" ToolTip="{Binding AccountButtonText}">
+                            <TextBlock Text="{Binding AccountButtonText}" TextTrimming="CharacterEllipsis" />
+                        </Button>
                         <Popup PlacementTarget="{Binding ElementName=AuthButton}" Placement="Bottom" StaysOpen="False"
                                IsOpen="{Binding IsAuthMenuOpen}" AllowsTransparency="True">
                             <Border Width="164" Margin="0,10,0,0" Padding="10" Background="#F9122746" BorderBrush="#6E8CC7FF" BorderThickness="1" CornerRadius="14">
@@ -189,7 +191,8 @@
                             </Border>
                         </Popup>
                     </Grid>
-                    <Button Content="&#x412;&#x44B;&#x439;&#x442;&#x438;" Command="{Binding LogoutCommand}" Margin="8,0,0,0" Padding="10,6"
+                    <Button Content="&#x412;&#x44B;&#x439;&#x442;&#x438;" Command="{Binding LogoutCommand}" Margin="8,0,0,0" Padding="12,6"
+                            Style="{StaticResource AuthButton}"
                             Visibility="{Binding IsAuthorized, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 </StackPanel>
 </Grid>
