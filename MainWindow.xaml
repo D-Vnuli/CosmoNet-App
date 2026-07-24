@@ -63,41 +63,60 @@
         </Style>
 
         <Style x:Key="PowerButton" TargetType="Button">
-            <Setter Property="Width" Value="154" />
-            <Setter Property="Height" Value="154" />
+            <Setter Property="Width" Value="210" />
+            <Setter Property="Height" Value="190" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="FontSize" Value="54" />
-            <Setter Property="Foreground" Value="White" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Grid>
-                            <Ellipse Margin="-10" Stroke="#884EACFF" StrokeThickness="2">
-                                <Ellipse.Effect>
-                                    <DropShadowEffect BlurRadius="28" ShadowDepth="0" Color="#3080D8FF" Opacity="0.8" />
-                                </Ellipse.Effect>
-                            </Ellipse>
-                            <Border Background="{TemplateBinding Background}" CornerRadius="77" BorderBrush="#A663B8FF" BorderThickness="1.5">
-                                <Grid>
-                                    <Ellipse Margin="9">
-                                        <Ellipse.Fill>
-                                            <RadialGradientBrush GradientOrigin="0.32,0.22" Center="0.5,0.5" RadiusX="0.72" RadiusY="0.72">
-                                                <GradientStop Color="#45FFFFFF" Offset="0" />
-                                                <GradientStop Color="#18FFFFFF" Offset="0.48" />
-                                                <GradientStop Color="#00000000" Offset="1" />
-                                            </RadialGradientBrush>
-                                        </Ellipse.Fill>
-                                    </Ellipse>
-                                    <Ellipse Margin="18" Stroke="#45D9EDFF" StrokeThickness="1" />
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Grid>
-                            </Border>
+            <Setter Property="Template"><Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid Width="210" Height="190">
+                        <Ellipse x:Name="Glow" Width="158" Height="158" Fill="#172B4A58" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Ellipse.Effect><DropShadowEffect x:Name="GlowEffect" BlurRadius="28" ShadowDepth="0" Color="#C69A6D" Opacity="0.42" /></Ellipse.Effect>
+                        </Ellipse>
+                        <!-- Far side of one Saturn ring system: all bands share one plane and one tilt. -->
+                        <Canvas Width="210" Height="190" IsHitTestVisible="False">
+                            <Canvas.RenderTransform><RotateTransform x:Name="RingBackRotation" Angle="-27" CenterX="105" CenterY="95" /></Canvas.RenderTransform>
+                            <Ellipse x:Name="RingOuter" Width="204" Height="64" Canvas.Left="3" Canvas.Top="63" Stroke="#6C7894" StrokeThickness="9" Opacity="0.7" />
+                            <Ellipse x:Name="RingMain" Width="188" Height="56" Canvas.Left="11" Canvas.Top="67" Stroke="#A7AFBF" StrokeThickness="6" Opacity="0.78" />
+                            <Ellipse x:Name="RingGap" Width="172" Height="48" Canvas.Left="19" Canvas.Top="71" Stroke="#1B263F" StrokeThickness="5" Opacity="0.88" />
+                            <Ellipse x:Name="RingInner" Width="158" Height="42" Canvas.Left="26" Canvas.Top="74" Stroke="#7E8BA2" StrokeThickness="4" Opacity="0.62" />
+                            <Ellipse x:Name="RingMotionBack" Width="194" Height="59" Canvas.Left="8" Canvas.Top="65.5" Stroke="#F5DEC0" StrokeThickness="1.2" StrokeDashArray="1 10" Opacity="0.2" />
+                        </Canvas>
+                        <Grid Width="148" Height="148" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True">
+                            <Grid.Clip><EllipseGeometry Center="74,74" RadiusX="74" RadiusY="74" /></Grid.Clip>
+                            <Ellipse x:Name="PlanetSurface"><Ellipse.Fill><RadialGradientBrush GradientOrigin="0.24,0.16" Center="0.5,0.5" RadiusX="0.76" RadiusY="0.76"><GradientStop Color="#C5CAD8" Offset="0" /><GradientStop Color="#7E8FAE" Offset="0.38" /><GradientStop Color="#485575" Offset="0.7" /><GradientStop Color="#1C2945" Offset="1" /></RadialGradientBrush></Ellipse.Fill></Ellipse>
+                            <Path x:Name="PlanetBandOne" Data="M-5,43 C28,31 116,35 156,51 L156,61 C113,47 31,47 -5,57 Z" Fill="#596989" Opacity="0.42" />
+                            <Path x:Name="PlanetBandTwo" Data="M-5,68 C34,57 114,61 156,77 L156,88 C110,73 33,75 -5,84 Z" Fill="#B6C4D7" Opacity="0.3" />
+                            <Path x:Name="PlanetBandThree" Data="M-4,100 C40,88 114,93 156,109 L156,123 C107,106 34,109 -4,118 Z" Fill="#303D5E" Opacity="0.48" />
+                            <Ellipse Margin="8"><Ellipse.Fill><RadialGradientBrush GradientOrigin="0.2,0.13" Center="0.5,0.5" RadiusX="0.72" RadiusY="0.72"><GradientStop Color="#58FFFFFF" Offset="0" /><GradientStop Color="#00FFFFFF" Offset="0.58" /><GradientStop Color="#70101A36" Offset="1" /></RadialGradientBrush></Ellipse.Fill></Ellipse>
                         </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+                        <Ellipse x:Name="Atmosphere" Width="153" Height="153" HorizontalAlignment="Center" VerticalAlignment="Center" Stroke="#92A9C9" StrokeThickness="1.2" Opacity="0.58" />
+                        <!-- Near side repeats the same bands in front of the planet, creating one continuous ring system. -->
+                        <Canvas Width="210" Height="190" IsHitTestVisible="False">
+                            <Canvas.RenderTransform><RotateTransform x:Name="RingFrontRotation" Angle="-27" CenterX="105" CenterY="95" /></Canvas.RenderTransform>
+                            <Path x:Name="RingOuterNear" Data="M3,95 C3,131 207,131 207,95 L198,95 C198,124 12,124 12,95 Z" Fill="#6C7894" Opacity="0.76" />
+                            <Path x:Name="RingMainNear" Data="M11,95 C11,126 199,126 199,95 L193,95 C193,120 17,120 17,95 Z" Fill="#A7AFBF" Opacity="0.86" />
+                            <Path x:Name="RingGapNear" Data="M19,95 C19,121 191,121 191,95 L186,95 C186,116 24,116 24,95 Z" Fill="#1B263F" Opacity="0.92" />
+                            <Path x:Name="RingInnerNear" Data="M26,95 C26,116 184,116 184,95 L180,95 C180,112 30,112 30,95 Z" Fill="#7E8BA2" Opacity="0.72" />
+                            <Path x:Name="RingMotionFront" Data="M8,96 C20,128 191,128 202,88" Stroke="#F5DEC0" StrokeThickness="1.2" StrokeDashArray="1 10" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Opacity="0.22" />
+                        </Canvas>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Atmosphere" Property="Stroke" Value="#FFE6C5" /><Setter TargetName="Glow" Property="Opacity" Value="0.84" /></Trigger>
+                        <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                            <Setter TargetName="Glow" Property="Fill" Value="#82467FFF" /><Setter TargetName="Glow" Property="Opacity" Value="1" /><Setter TargetName="Atmosphere" Property="Stroke" Value="#A6E3FF" /><Setter TargetName="Atmosphere" Property="StrokeThickness" Value="2.2" /><Setter TargetName="RingOuter" Property="Stroke" Value="#4FA6FF" /><Setter TargetName="RingMain" Property="Stroke" Value="#A9DEFF" /><Setter TargetName="RingInner" Property="Stroke" Value="#6DC4FF" /><Setter TargetName="RingOuterNear" Property="Fill" Value="#4FA6FF" /><Setter TargetName="RingMainNear" Property="Fill" Value="#A9DEFF" /><Setter TargetName="RingInnerNear" Property="Fill" Value="#6DC4FF" /><Setter TargetName="RingMotionBack" Property="Opacity" Value="0.9" /><Setter TargetName="RingMotionFront" Property="Opacity" Value="0.95" />
+                            <DataTrigger.EnterActions><BeginStoryboard x:Name="SaturnConnectingAnimation"><Storyboard RepeatBehavior="Forever"><DoubleAnimation Storyboard.TargetName="RingMotionBack" Storyboard.TargetProperty="StrokeDashOffset" From="0" To="-38" Duration="0:0:0.42" /><DoubleAnimation Storyboard.TargetName="RingMotionFront" Storyboard.TargetProperty="StrokeDashOffset" From="0" To="-38" Duration="0:0:0.42" /><DoubleAnimation Storyboard.TargetName="GlowEffect" Storyboard.TargetProperty="BlurRadius" From="22" To="43" Duration="0:0:0.7" AutoReverse="True" /><DoubleAnimation Storyboard.TargetName="Atmosphere" Storyboard.TargetProperty="Opacity" From="0.36" To="0.95" Duration="0:0:0.7" AutoReverse="True" /></Storyboard></BeginStoryboard></DataTrigger.EnterActions>
+                            <DataTrigger.ExitActions><StopStoryboard BeginStoryboardName="SaturnConnectingAnimation" /></DataTrigger.ExitActions>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                            <Setter TargetName="Glow" Property="Fill" Value="#8650E6B9" /><Setter TargetName="Glow" Property="Opacity" Value="1" /><Setter TargetName="PlanetSurface" Property="Fill"><Setter.Value><RadialGradientBrush GradientOrigin="0.24,0.16" Center="0.5,0.5" RadiusX="0.76" RadiusY="0.76"><GradientStop Color="#D8C3A5" Offset="0" /><GradientStop Color="#A88162" Offset="0.4" /><GradientStop Color="#684B4B" Offset="0.7" /><GradientStop Color="#263047" Offset="1" /></RadialGradientBrush></Setter.Value></Setter><Setter TargetName="PlanetBandOne" Property="Fill" Value="#855A49" /><Setter TargetName="PlanetBandTwo" Property="Fill" Value="#E0C5A2" /><Setter TargetName="PlanetBandThree" Property="Fill" Value="#4E3746" /><Setter TargetName="Atmosphere" Property="Stroke" Value="#8FFFE0" /><Setter TargetName="Atmosphere" Property="StrokeThickness" Value="2.3" /><Setter TargetName="RingOuter" Property="Stroke" Value="#25D7A8" /><Setter TargetName="RingMain" Property="Stroke" Value="#9DFFE2" /><Setter TargetName="RingInner" Property="Stroke" Value="#53E8C0" /><Setter TargetName="RingOuterNear" Property="Fill" Value="#25D7A8" /><Setter TargetName="RingMainNear" Property="Fill" Value="#9DFFE2" /><Setter TargetName="RingInnerNear" Property="Fill" Value="#53E8C0" /><Setter TargetName="RingMotionBack" Property="Opacity" Value="0.7" /><Setter TargetName="RingMotionFront" Property="Opacity" Value="0.78" />
+                            <DataTrigger.EnterActions><BeginStoryboard x:Name="SaturnConnectedAnimation"><Storyboard RepeatBehavior="Forever"><DoubleAnimation Storyboard.TargetName="RingMotionBack" Storyboard.TargetProperty="StrokeDashOffset" From="0" To="-38" Duration="0:0:3.6" /><DoubleAnimation Storyboard.TargetName="RingMotionFront" Storyboard.TargetProperty="StrokeDashOffset" From="0" To="-38" Duration="0:0:3.6" /><DoubleAnimation Storyboard.TargetName="GlowEffect" Storyboard.TargetProperty="BlurRadius" From="24" To="34" Duration="0:0:2.2" AutoReverse="True" /></Storyboard></BeginStoryboard></DataTrigger.EnterActions>
+                            <DataTrigger.ExitActions><StopStoryboard BeginStoryboardName="SaturnConnectedAnimation" /></DataTrigger.ExitActions>
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value></Setter>
         </Style>
 
         <Style x:Key="SubscriptionExpander" TargetType="Expander">
@@ -208,7 +227,7 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <StackPanel Grid.Row="0" Width="348" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Button Style="{StaticResource PowerButton}" Command="{Binding PowerCommand}" Background="{Binding PowerButtonColor}" ToolTip="Подключить или отключить VPN" Content="⏻" HorizontalAlignment="Center" />
+                            <Button Style="{StaticResource PowerButton}" Command="{Binding PowerCommand}" ToolTip="Подключить или отключить VPN" AutomationProperties.Name="Подключить или отключить VPN" HorizontalAlignment="Center" />
                             <TextBlock Text="{Binding ConnectionStateText}" Foreground="White" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,24,0,0" />
 
                             <!-- The information rows are measured by their real content width.
