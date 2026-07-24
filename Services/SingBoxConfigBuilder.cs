@@ -183,6 +183,14 @@ public sealed class SingBoxConfigBuilder
         };
 
         var flow = profile.Query.GetValueOrDefault("flow", "");
+        if (string.IsNullOrWhiteSpace(flow) &&
+            profile.Security.Equals("reality", StringComparison.OrdinalIgnoreCase))
+        {
+            // Reality inbound CosmoNet uses Vision; older 3X-UI subscription
+            // links may omit this query parameter.
+            flow = "xtls-rprx-vision";
+        }
+
         if (!string.IsNullOrWhiteSpace(flow))
         {
             outbound["flow"] = flow;

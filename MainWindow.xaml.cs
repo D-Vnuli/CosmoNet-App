@@ -319,6 +319,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
 
+    private async void OnPurchaseClick(object sender, RoutedEventArgs e)
+    {
+        PurchaseButton.IsChecked = false;
+        await _viewModel.StartYooKassaPaymentAsync(_selectedTariffName);
+    }
+
     private void OnSubscriptionDialogBackdropMouseDown(object sender, MouseButtonEventArgs e)
     {
         IsSubscriptionDialogOpen = false;

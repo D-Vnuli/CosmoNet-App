@@ -573,6 +573,23 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private async Task<SubscriptionLoadResult> LoadSubscriptionWithMetadataAsync()
     {
+        var serverSubscription = await TryLoadAuthorizedSubscriptionAsync();
+        if (serverSubscription is not null)
+        {
+            await UpdateSubscriptionUrlAsync(serverSubscription.SubscriptionUrl);
+            if (string.IsNullOrWhiteSpace(SubscriptionUrl))
+            {
+                return new SubscriptionLoadResult { Summary = serverSubscription.Subscription };
+            }
+
+            var loaded = await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl);
+            return new SubscriptionLoadResult
+            {
+                Profiles = loaded.Profiles,
+                Summary = serverSubscription.Subscription
+            };
+        }
+
         var subscription = await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl);
         var subscriptionId = GetSubscriptionId(SubscriptionUrl);
         var clientId = subscription.Profiles.FirstOrDefault()?.Uuid;
@@ -597,6 +614,45 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         return subscription;
+    }
+
+    private async Task<AppSubscriptionResult?> TryLoadAuthorizedSubscriptionAsync()
+    {
+        if (!AccountSession.IsAuthorized || string.IsNullOrWhiteSpace(AuthApiBaseUrl))
+        {
+            return null;
+        }
+
+        var secrets = await _secretSettingsStore.LoadAsync();
+        if (string.IsNullOrWhiteSpace(secrets.AuthToken))
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _telegramAuthApiClient.GetSubscriptionAsync(
+                AuthApiBaseUrl,
+                secrets.AuthToken);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task UpdateSubscriptionUrlAsync(string subscriptionUrl)
+    {
+        var normalized = subscriptionUrl?.Trim() ?? "";
+        if (string.Equals(SubscriptionUrl, normalized, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        SubscriptionUrl = normalized;
+        var secrets = await _secretSettingsStore.LoadAsync();
+        secrets.SubscriptionUrl = normalized;
+        await _secretSettingsStore.SaveAsync(secrets);
     }
 
     private string GetSubscriptionApiBaseUrl()
@@ -630,7 +686,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
     public async Task RefreshSubscriptionInBackgroundAsync()
     {
-        if (_isRefreshingSubscription || string.IsNullOrWhiteSpace(SubscriptionUrl))
+        if (_isRefreshingSubscription ||
+            (!AccountSession.IsAuthorized && string.IsNullOrWhiteSpace(SubscriptionUrl)))
         {
             return;
         }
@@ -686,6 +743,36 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             await SaveAsync(setStatus: false);
             return;
         }
+    }
+
+    public async Task StartYooKassaPaymentAsync(string tariffCode)
+    {
+        if (!AccountSession.IsAuthorized || string.IsNullOrWhiteSpace(AuthApiBaseUrl))
+        {
+            StatusText = "\u0412\u043e\u0439\u0434\u0438\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 Telegram, \u0447\u0442\u043e\u0431\u044b \u043e\u043f\u043b\u0430\u0442\u0438\u0442\u044c \u043f\u043e\u0434\u043f\u0438\u0441\u043a\u0443.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            var secrets = await _secretSettingsStore.LoadAsync();
+            if (string.IsNullOrWhiteSpace(secrets.AuthToken))
+            {
+                throw new InvalidOperationException("\u0421\u0435\u0441\u0441\u0438\u044f Telegram \u0438\u0441\u0442\u0435\u043a\u043b\u0430. \u0412\u043e\u0439\u0434\u0438\u0442\u0435 \u0437\u0430\u043d\u043e\u0432\u043e.");
+            }
+
+            var payment = await _telegramAuthApiClient.CreateYooKassaPaymentAsync(
+                AuthApiBaseUrl,
+                secrets.AuthToken,
+                tariffCode.ToLowerInvariant());
+            if (string.IsNullOrWhiteSpace(payment.PaymentUrl))
+            {
+                throw new InvalidOperationException("\u0421\u0435\u0440\u0432\u0438\u0441 \u043e\u043f\u043b\u0430\u0442\u044b \u043d\u0435 \u0432\u0435\u0440\u043d\u0443\u043b \u0441\u0441\u044b\u043b\u043a\u0443.");
+            }
+
+            Process.Start(new ProcessStartInfo(payment.PaymentUrl) { UseShellExecute = true });
+            StatusText = "\u041e\u0442\u043a\u0440\u043e\u0439\u0442\u0435 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0443 \u043e\u043f\u043b\u0430\u0442\u044b \u0432 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0435. \u041f\u043e\u0441\u043b\u0435 \u043e\u043f\u043b\u0430\u0442\u044b \u043f\u043e\u0434\u043f\u0438\u0441\u043a\u0430 \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438.";
+        });
     }
 
     private async Task LogoutAsync()

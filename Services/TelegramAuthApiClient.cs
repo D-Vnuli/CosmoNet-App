@@ -27,6 +27,33 @@ public sealed class TelegramAuthApiClient
             ?? throw new InvalidOperationException("Empty authorization status.");
     }
 
+    public async Task<AppSubscriptionResult> GetSubscriptionAsync(string baseUrl, string token, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(BaseUri(baseUrl), "api/app/subscription"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await _httpClient.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<AppSubscriptionResult>(cancellationToken: ct)
+            ?? throw new InvalidOperationException("Empty subscription response.");
+    }
+
+    public async Task<YooKassaPaymentResult> CreateYooKassaPaymentAsync(
+        string baseUrl,
+        string token,
+        string tariffCode,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(BaseUri(baseUrl), "api/app/payments/yookassa"))
+        {
+            Content = JsonContent.Create(new { tariffCode })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await _httpClient.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<YooKassaPaymentResult>(cancellationToken: ct)
+            ?? throw new InvalidOperationException("Empty payment response.");
+    }
+
     public async Task LogoutAsync(string baseUrl, string token, CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(BaseUri(baseUrl), "api/app/auth/logout"));
