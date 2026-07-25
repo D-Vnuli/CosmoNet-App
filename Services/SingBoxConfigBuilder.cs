@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using CosmoNet.App.Models;
 
 namespace CosmoNet.App.Services;
@@ -14,7 +14,8 @@ public sealed class SingBoxConfigBuilder
         IReadOnlyList<VpnProfile> profiles,
         TrafficMode trafficMode,
         IReadOnlyList<string> selectedProcessNames,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? outputPath = null)
     {
         if (profiles.Count == 0)
         {
@@ -72,11 +73,127 @@ public sealed class SingBoxConfigBuilder
             ["route"] = BuildRoute(trafficMode, selectedProcessNames)
         };
 
-        await using var stream = File.Create(AppPaths.GeneratedConfigPath);
+        var configPath = string.IsNullOrWhiteSpace(outputPath)
+            ? AppPaths.GeneratedConfigPath
+            : outputPath;
+        await using var stream = File.Create(configPath);
         await JsonSerializer.SerializeAsync(stream, config, JsonOptions, cancellationToken);
-        return AppPaths.GeneratedConfigPath;
+        return configPath;
     }
 
+    public async Task<string> WriteBootstrapConfigAsync(
+        VpnProfile profile,
+        CancellationToken cancellationToken = default)
+    {
+        AppPaths.EnsureDataDirectory();
+
+        var dns = BuildDns();
+        foreach (var server in (object[])dns["servers"]!)
+        {
+            ((Dictionary<string, object?>)server)["detour"] = "profile-0";
+        }
+
+        var config = new Dictionary<string, object?>
+        {
+            ["log"] = new Dictionary<string, object?>
+            {
+                ["level"] = "info",
+                ["timestamp"] = true,
+                ["output"] = AppPaths.SingBoxLogPath,
+            },
+            ["dns"] = dns,
+            ["inbounds"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "mixed",
+                    ["tag"] = "bootstrap-proxy",
+                    ["listen"] = "127.0.0.1",
+                    ["listen_port"] = SystemProxyService.BootstrapPort,
+                },
+            },
+            ["outbounds"] = new object[]
+            {
+                BuildOutbound(profile, 0),
+                new Dictionary<string, object?> { ["type"] = "direct", ["tag"] = "direct" },
+            },
+            ["route"] = new Dictionary<string, object?>
+            {
+                ["auto_detect_interface"] = true,
+                ["default_domain_resolver"] = "cloudflare",
+                ["final"] = "profile-0",
+            },
+        };
+
+        await using var stream = File.Create(AppPaths.BootstrapConfigPath);
+        await JsonSerializer.SerializeAsync(stream, config, JsonOptions, cancellationToken);
+        return AppPaths.BootstrapConfigPath;
+    }
+    public async Task<string> WriteBootstrapDesktopConfigAsync(
+        VpnProfile profile,
+        string processName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            throw new InvalidOperationException("Не найден процесс Telegram Desktop.");
+        }
+
+        AppPaths.EnsureDataDirectory();
+        var dns = BuildDns();
+        foreach (var server in (object[])dns["servers"]!)
+        {
+            ((Dictionary<string, object?>)server)["detour"] = "profile-0";
+        }
+
+        var config = new Dictionary<string, object?>
+        {
+            ["log"] = new Dictionary<string, object?>
+            {
+                ["level"] = "info",
+                ["timestamp"] = true,
+                ["output"] = AppPaths.SingBoxLogPath,
+            },
+            ["dns"] = dns,
+            ["inbounds"] = new object[]
+            {
+                BuildTunInbound(),
+                new Dictionary<string, object?>
+                {
+                    ["type"] = "mixed",
+                    ["tag"] = "bootstrap-proxy",
+                    ["listen"] = "127.0.0.1",
+                    ["listen_port"] = SystemProxyService.BootstrapPort,
+                },
+            },
+            ["outbounds"] = new object[]
+            {
+                BuildOutbound(profile, 0),
+                new Dictionary<string, object?> { ["type"] = "direct", ["tag"] = "direct" },
+            },
+            ["route"] = new Dictionary<string, object?>
+            {
+                ["auto_detect_interface"] = true,
+                ["default_domain_resolver"] = "cloudflare",
+                ["rules"] = new object[]
+                {
+                    new Dictionary<string, object?> { ["protocol"] = "dns", ["action"] = "hijack-dns" },
+                    new Dictionary<string, object?> { ["inbound"] = new[] { "bootstrap-proxy" }, ["outbound"] = "profile-0" },
+                    new Dictionary<string, object?>
+                    {
+                        ["inbound"] = new[] { "tun-in" },
+                        ["process_name"] = new[] { processName },
+                        ["outbound"] = "profile-0",
+                    },
+                },
+                ["final"] = "direct",
+            },
+        };
+
+        await using var stream = File.Create(AppPaths.BootstrapConfigPath);
+        await JsonSerializer.SerializeAsync(stream, config, JsonOptions, cancellationToken);
+        return AppPaths.BootstrapConfigPath;
+    }
     private static Dictionary<string, object?> BuildDns()
     {
         return new Dictionary<string, object?>
