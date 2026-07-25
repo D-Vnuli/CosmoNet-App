@@ -3,6 +3,8 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -24,6 +26,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly SecretSettingsStore _secretSettingsStore = new();
     private readonly SingBoxConfigBuilder _configBuilder = new();
     private readonly SingBoxService _singBoxService = new();
+    private readonly SystemProxyService _systemProxyService = new();
     private readonly ApplicationIconService _applicationIconService = new();
     private readonly DispatcherTimer _serverAvailabilityTimer;
     private readonly DispatcherTimer _subscriptionRefreshTimer;
@@ -47,6 +50,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _isServerAvailable;
     private bool _isCheckingServerAvailability;
     private bool _isRefreshingSubscription;
+    private bool _isBootstrapVpnActive;
     private DateTimeOffset? _expiryWarningShownFor;
     private TrafficMode _trafficMode = TrafficMode.AllTraffic;
     private DateTimeOffset? _lastRefresh;
@@ -63,6 +67,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public MainViewModel()
     {
         AvailableApplications.CollectionChanged += OnAvailableApplicationsChanged;
+        _systemProxyService.Restore();
         _vpnLogService.LogReceived += OnLogReceived;
 
         _serverAvailabilityTimer = new DispatcherTimer
@@ -80,7 +85,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         OpenDataFolderCommand = new RelayCommand(OpenDataFolderAsync);
         BrowseApplicationCommand = new RelayCommand(BrowseApplicationAsync, () => !IsBusy);
         ShowAuthMethodsCommand = new RelayCommand(ShowAuthMethods, () => !IsBusy && !AccountSession.IsAuthorized);
-        LoginCommand = new RelayCommand(LoginAsync, () => !IsBusy && !AccountSession.IsAuthorized);
+        LoginCommand = new RelayCommand(LoginAsync, () => !IsBusy && !AccountSession.IsAuthorized && string.IsNullOrEmpty(_authSessionId));
         LogoutCommand = new RelayCommand(LogoutAsync, () => !IsBusy && AccountSession.IsAuthorized);
         RunDiagnosticsCommand = new RelayCommand(RunDiagnosticsAsync, () => !IsBusy);
         EnableLogsCommand = new RelayCommand(EnableLogsAsync, () => !IsLogMonitoring);
@@ -504,9 +509,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public void Dispose()
     {
+        StopBootstrapVpn();
         _serverAvailabilityTimer.Stop();
         _vpnLogService.LogReceived -= OnLogReceived;
         _vpnLogService.Dispose();
+        _systemProxyService.Restore();
     }
 
     private async Task EnableLogsAsync()
@@ -715,36 +722,217 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private async Task LoginAsync()
     {
         IsAuthMenuOpen = false;
-        if (string.IsNullOrWhiteSpace(AuthApiBaseUrl)) { AuthStatus = "Сервис авторизации временно недоступен."; StatusText = "Не задан адрес API авторизации."; return; }
+        if (string.IsNullOrWhiteSpace(AuthApiBaseUrl))
+        {
+            AuthStatus = "Сервис авторизации временно недоступен.";
+            StatusText = "Не задан адрес API авторизации.";
+            return;
+        }
+
         await RunBusyAsync(async () =>
         {
+            if (_singBoxService.IsRunning)
+            {
+                throw new InvalidOperationException("Сначала отключите текущее VPN-подключение.");
+            }
+
             var result = await _telegramAuthApiClient.StartAsync(AuthApiBaseUrl, _authDeviceId);
+            var telegramDesktopPath = FindTelegramDesktop();
             _authSessionId = result.SessionId;
-            AuthStatus = "Confirm sign-in in Telegram.";
-            Process.Start(new ProcessStartInfo(result.TelegramDeepLink) { UseShellExecute = true });
-            _ = PollAuthorizationAsync(result.SessionId, result.ExpiresAt);
+            RaiseCommandStates();
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(result.BootstrapVpn?.VlessUri))
+                {
+                    await StartBootstrapVpnAsync(result.BootstrapVpn, telegramDesktopPath);
+                }
+
+                if (!string.IsNullOrWhiteSpace(telegramDesktopPath))
+                {
+                    AuthStatus = "Подтвердите вход в Telegram Desktop.";
+                    OpenTelegramDesktopAuthorization(result.TelegramDeepLink);
+                }
+                else
+                {
+                    AuthStatus = "Подтвердите вход в Telegram Web.";
+                    OpenTelegramAuthorizationLink(string.IsNullOrWhiteSpace(result.TelegramWebLink)
+                        ? result.TelegramDeepLink
+                        : result.TelegramWebLink);
+                }
+                _ = PollAuthorizationAsync(result.SessionId);
+            }
+            catch
+            {
+                _authSessionId = "";
+                StopBootstrapVpn();
+                RaiseCommandStates();
+                throw;
+            }
         });
     }
 
-    private async Task PollAuthorizationAsync(string sessionId, DateTimeOffset expiresAt)
+    private static string? FindTelegramDesktop()
     {
-        while (_authSessionId == sessionId && DateTimeOffset.UtcNow < expiresAt)
+        var candidates = new[]
         {
-            await Task.Delay(TimeSpan.FromSeconds(2));
-            var result = await _telegramAuthApiClient.GetStatusAsync(AuthApiBaseUrl, _authDeviceId, sessionId);
-            AuthStatus = result.Message;
-            if (!result.IsAuthorized) { if (!result.IsPending) _authSessionId = ""; continue; }
-            var secrets = await _secretSettingsStore.LoadAsync();
-            secrets.AuthToken = result.AuthToken; secrets.SubscriptionUrl = result.SubscriptionUrl;
-            await _secretSettingsStore.SaveAsync(secrets);
-            SubscriptionUrl = result.SubscriptionUrl;
-            AccountSession = new AccountSession { IsAuthorized = true, DisplayName = result.DisplayName, AuthorizedAt = DateTimeOffset.Now, Subscription = result.Subscription ?? new SubscriptionSummary() };
-            _authSessionId = "";
-            await SaveAsync(setStatus: false);
-            return;
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Telegram Desktop", "Telegram.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Telegram Desktop", "Telegram.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Telegram Desktop", "Telegram.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Telegram Desktop", "Telegram.exe"),
+        };
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static void OpenTelegramDesktopAuthorization(string link)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = link,
+            UseShellExecute = true,
+        });
+    }
+    private static void OpenTelegramAuthorizationLink(string link)
+    {
+        var browserPath = FindTelegramWebBrowser();
+        if (string.IsNullOrWhiteSpace(browserPath))
+        {
+            throw new FileNotFoundException("Не найден Microsoft Edge или Google Chrome для авторизации в Telegram Web.");
+        }
+
+        var browserProfile = Path.Combine(AppPaths.DataDirectory, "telegram-web-auth");
+        Directory.CreateDirectory(browserProfile);
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = browserPath,
+            Arguments = $"--proxy-server=\"http://127.0.0.1:{SystemProxyService.BootstrapPort}\" --proxy-bypass-list=\"<-loopback>\" --disable-quic --user-data-dir=\"{browserProfile}\" \"{link}\"",
+            UseShellExecute = true,
+        });
+    }
+
+    private static string? FindTelegramWebBrowser()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft", "Edge", "Application", "msedge.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft", "Edge", "Application", "msedge.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google", "Chrome", "Application", "chrome.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google", "Chrome", "Application", "chrome.exe"),
+        };
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private async Task StartBootstrapVpnAsync(BootstrapVpnProfile bootstrap, string? telegramDesktopPath)
+    {
+        var profiles = _subscriptionService.ParseSubscription(bootstrap.VlessUri);
+        if (profiles.Count != 1)
+        {
+            throw new InvalidOperationException("Получен некорректный временный VPN-профиль.");
+        }
+
+        var desktopMode = !string.IsNullOrWhiteSpace(telegramDesktopPath);
+        var configPath = desktopMode
+            ? await _configBuilder.WriteBootstrapDesktopConfigAsync(profiles[0], Path.GetFileName(telegramDesktopPath!))
+            : await _configBuilder.WriteBootstrapConfigAsync(profiles[0]);
+        var diagnostic = await _singBoxService.CheckConfigAsync(configPath);
+        if (!diagnostic.Success)
+        {
+            throw new InvalidOperationException(diagnostic.Message);
+        }
+
+        await _singBoxService.StartAsync(configPath, useTunMode: desktopMode);
+        _isBootstrapVpnActive = true;
+
+        await VerifyBootstrapVpnAsync();
+        IsConnected = true;
+        StatusText = "Временный VPN подключен для авторизации в Telegram.";
+    }
+
+    private static async Task VerifyBootstrapVpnAsync()
+    {
+        Exception? lastError = null;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                using var handler = new HttpClientHandler
+                {
+                    Proxy = new WebProxy($"http://127.0.0.1:{SystemProxyService.BootstrapPort}"),
+                    UseProxy = true,
+                };
+                using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+                using var response = await client.GetAsync("https://api.telegram.org/");
+                return;
+            }
+            catch (Exception error)
+            {
+                lastError = error;
+                await Task.Delay(TimeSpan.FromSeconds(1));
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Временный VPN не смог подключиться к Telegram: {lastError?.Message}");
+    }
+    private async Task PollAuthorizationAsync(string sessionId)
+    {
+        while (_authSessionId == sessionId)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                var result = await _telegramAuthApiClient.GetStatusAsync(AuthApiBaseUrl, _authDeviceId, sessionId);
+                AuthStatus = result.Message;
+                if (!result.IsAuthorized)
+                {
+                    if (!result.IsPending)
+                    {
+                        _authSessionId = "";
+                        StopBootstrapVpn();
+                        RaiseCommandStates();
+                        return;
+                    }
+                    continue;
+                }
+
+                var secrets = await _secretSettingsStore.LoadAsync();
+                secrets.AuthToken = result.AuthToken;
+                secrets.SubscriptionUrl = result.SubscriptionUrl;
+                await _secretSettingsStore.SaveAsync(secrets);
+                SubscriptionUrl = result.SubscriptionUrl;
+                AccountSession = new AccountSession
+                {
+                    IsAuthorized = true,
+                    DisplayName = result.DisplayName,
+                    AuthorizedAt = DateTimeOffset.Now,
+                    Subscription = result.Subscription ?? new SubscriptionSummary(),
+                };
+                _authSessionId = "";
+                await SaveAsync(setStatus: false);
+                StopBootstrapVpn();
+                return;
+            }
+            catch
+            {
+                AuthStatus = "Временный VPN подключен. Ожидаем подтверждения в Telegram…";
+            }
         }
     }
 
+    private void StopBootstrapVpn()
+    {
+        if (!_isBootstrapVpnActive) return;
+
+        _singBoxService.Stop();
+        _isBootstrapVpnActive = false;
+        IsConnected = false;
+        try
+        {
+            File.Delete(AppPaths.BootstrapConfigPath);
+        }
+        catch (IOException)
+        {
+        }
+    }
     public async Task StartYooKassaPaymentAsync(string tariffCode)
     {
         if (!AccountSession.IsAuthorized || string.IsNullOrWhiteSpace(AuthApiBaseUrl))
@@ -914,6 +1102,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private Task DisconnectAsync()
     {
+        if (_isBootstrapVpnActive)
+        {
+            StopBootstrapVpn();
+            StatusText = "Временный VPN отключен.";
+            return Task.CompletedTask;
+        }
         AppendDiagnosticLog("Остановка процесса sing-box.");
         _singBoxService.Stop();
         IsConnected = false;
