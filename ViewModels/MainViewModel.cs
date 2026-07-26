@@ -22,7 +22,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly SubscriptionService _subscriptionService = new();
     private readonly TelegramAuthApiClient _telegramAuthApiClient = new();
     private readonly FeedbackApiClient _feedbackApiClient = new();
-    private readonly SubscriptionMetadataApiClient _subscriptionMetadataApiClient = new();
     private readonly SecretSettingsStore _secretSettingsStore = new();
     private readonly SingBoxConfigBuilder _configBuilder = new();
     private readonly SingBoxService _singBoxService = new();
@@ -581,48 +580,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private async Task<SubscriptionLoadResult> LoadSubscriptionWithMetadataAsync()
     {
         var serverSubscription = await TryLoadAuthorizedSubscriptionAsync();
-        if (serverSubscription is not null)
+        if (serverSubscription is null)
         {
-            await UpdateSubscriptionUrlAsync(serverSubscription.SubscriptionUrl);
-            if (string.IsNullOrWhiteSpace(SubscriptionUrl))
-            {
-                return new SubscriptionLoadResult { Summary = serverSubscription.Subscription };
-            }
-
-            var loaded = await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl);
-            return new SubscriptionLoadResult
-            {
-                Profiles = loaded.Profiles,
-                Summary = serverSubscription.Subscription
-            };
+            return new SubscriptionLoadResult();
         }
 
-        var subscription = await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl);
-        var subscriptionId = GetSubscriptionId(SubscriptionUrl);
-        var clientId = subscription.Profiles.FirstOrDefault()?.Uuid;
-        if (string.IsNullOrWhiteSpace(subscriptionId) && string.IsNullOrWhiteSpace(clientId))
+        await UpdateSubscriptionUrlAsync(serverSubscription.SubscriptionUrl);
+        if (string.IsNullOrWhiteSpace(SubscriptionUrl))
         {
-            return subscription;
+            return new SubscriptionLoadResult { Summary = serverSubscription.Subscription };
         }
 
-        try
+        var loaded = await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl);
+        return new SubscriptionLoadResult
         {
-            var metadata = await _subscriptionMetadataApiClient.GetAsync(
-                GetSubscriptionApiBaseUrl(),
-                subscriptionId,
-                clientId);
-            subscription.Summary.DeviceLimit = metadata.DeviceLimit;
-            subscription.Summary.ExpiresAt = metadata.ExpiresAt;
-            subscription.Summary.Status = metadata.Status;
-        }
-        catch
-        {
-            // The VPN configuration remains usable when the metadata service is unavailable.
-        }
-
-        return subscription;
+            Profiles = loaded.Profiles,
+            Summary = serverSubscription.Subscription
+        };
     }
-
     private async Task<AppSubscriptionResult?> TryLoadAuthorizedSubscriptionAsync()
     {
         if (!AccountSession.IsAuthorized || string.IsNullOrWhiteSpace(AuthApiBaseUrl))
@@ -662,39 +637,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         await _secretSettingsStore.SaveAsync(secrets);
     }
 
-    private string GetSubscriptionApiBaseUrl()
-    {
-        if (Uri.TryCreate(SubscriptionUrl.Trim(), UriKind.Absolute, out var subscriptionUri))
-        {
-            var metadataUri = new UriBuilder(Uri.UriSchemeHttp, subscriptionUri.Host, 8090);
-            return metadataUri.Uri.GetLeftPart(UriPartial.Authority);
-        }
-
-        throw new InvalidOperationException("Subscription metadata service is unavailable.");
-    }
-
-    private static string? GetSubscriptionId(string subscriptionUrl)
-    {
-        if (!Uri.TryCreate(subscriptionUrl.Trim(), UriKind.Absolute, out var uri))
-        {
-            return null;
-        }
-
-        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        for (var index = 0; index < segments.Length - 1; index++)
-        {
-            if (segments[index].Equals("sub", StringComparison.OrdinalIgnoreCase))
-            {
-                return segments[index + 1];
-            }
-        }
-
-        return null;
-    }
     public async Task RefreshSubscriptionInBackgroundAsync()
     {
-        if (_isRefreshingSubscription ||
-            (!AccountSession.IsAuthorized && string.IsNullOrWhiteSpace(SubscriptionUrl)))
+        if (_isRefreshingSubscription || !AccountSession.IsAuthorized)
         {
             return;
         }
@@ -958,7 +903,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 throw new InvalidOperationException("\u0421\u0435\u0440\u0432\u0438\u0441 \u043e\u043f\u043b\u0430\u0442\u044b \u043d\u0435 \u0432\u0435\u0440\u043d\u0443\u043b \u0441\u0441\u044b\u043b\u043a\u0443.");
             }
 
-            Process.Start(new ProcessStartInfo(payment.PaymentUrl) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(SecurityPolicy.RequirePaymentUrl(payment.PaymentUrl).AbsoluteUri) { UseShellExecute = true });
             StatusText = "\u041e\u0442\u043a\u0440\u043e\u0439\u0442\u0435 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0443 \u043e\u043f\u043b\u0430\u0442\u044b \u0432 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0435. \u041f\u043e\u0441\u043b\u0435 \u043e\u043f\u043b\u0430\u0442\u044b \u043f\u043e\u0434\u043f\u0438\u0441\u043a\u0430 \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438.";
         });
     }
@@ -1451,6 +1396,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             var isAvailable = false;
             try
             {
+                if (IPAddress.TryParse(host, out var address) && !SecurityPolicy.IsPublicAddress(address)) return;
                 using var client = new TcpClient();
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
                 await client.ConnectAsync(host, port, timeout.Token);

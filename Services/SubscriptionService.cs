@@ -39,15 +39,12 @@ public sealed class SubscriptionService
             };
         }
 
-        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        {
-            throw new InvalidOperationException("Введите ссылку подписки HTTPS или конфигурацию vless://.");
-        }
+        var uri = SecurityPolicy.RequireHttps(source, "ссылка подписки");
 
-        using var response = await _httpClient.GetAsync(uri, cancellationToken);
+        using var response = await _httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
 
+        if (response.Content.Headers.ContentLength is > 1_048_576) throw new InvalidOperationException("Подписка слишком большая.");
         var raw = await response.Content.ReadAsStringAsync(cancellationToken);
         var profiles = ParseSubscription(raw);
         var summary = ParseSubscriptionSummary(response);

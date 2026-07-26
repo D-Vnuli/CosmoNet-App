@@ -64,7 +64,7 @@ public sealed class TelegramAuthApiClient
 
     private static Uri BaseUri(string value)
     {
-        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)) throw new InvalidOperationException("Authorization API is not configured.");
+        var uri = SecurityPolicy.RequireCosmoNetApi(value);
         var builder = new UriBuilder(uri);
         if (!builder.Path.EndsWith('/')) builder.Path += "/";
         return builder.Uri;

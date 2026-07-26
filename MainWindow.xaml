@@ -423,9 +423,9 @@
                                                    Foreground="#C7D8EC" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
 
                                         <TextBlock Foreground="White" Margin="0,12,0,0" TextWrapping="Wrap">
-                                            <Run Text="2. Добавьте личную подписку." FontWeight="SemiBold" />
+                                            <Run Text="2. Войдите через Telegram." FontWeight="SemiBold" />
                                         </TextBlock>
-                                        <TextBlock Text="Нажмите карточку «Подписка» на главном экране. Вставьте полученную от CosmoNet ссылку в нижнее поле и нажмите «Загрузить». Ссылка сохраняется на этом компьютере, поэтому повторно вводить её при каждом запуске не нужно."
+                                        <TextBlock Text="Нажмите значок Telegram, получите код, подтвердите его в боте CosmoNet и нажмите «Проверить». После входа приложение само получит вашу подписку."
                                                    Foreground="#C7D8EC" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
 
                                         <TextBlock Foreground="White" Margin="0,12,0,0" TextWrapping="Wrap">
@@ -484,11 +484,11 @@
                                                    Foreground="#B9D9FF"
                                                    FontSize="16"
                                                    FontWeight="SemiBold" />
-                                        <TextBlock Text="После первой загрузки CosmoNet сохраняет ссылку подписки на этом компьютере и обновляет данные автоматически. На главном экране всегда видна дата окончания."
+                                        <TextBlock Text="После входа через Telegram CosmoNet получает подписку из защищённого API и обновляет данные автоматически. На главном экране всегда видна дата окончания."
                                                    Foreground="#DCEAFF" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
                                         <TextBlock Text="Когда до окончания останется три дня или меньше, CosmoNet покажет предупреждение. После продления новая дата появится автоматически."
                                                    Foreground="#DCEAFF" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
-                                        <TextBlock Text="Не передавайте другим людям ссылку подписки и код входа — они относятся только к вашему аккаунту."
+                                        <TextBlock Text="Не передавайте другим людям код входа — он относится только к вашему аккаунту."
                                                    Foreground="#F2C98D" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
@@ -501,7 +501,7 @@
                                                    FontWeight="SemiBold" />
                                         <TextBlock Text="Значок Telegram в правом верхнем углу нужен для привязки аккаунта. Нажмите «Получить код», подтвердите этот код в боте CosmoNet и затем нажмите «Проверить»."
                                                    Foreground="#DCEAFF" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
-                                        <TextBlock Text="Если бот не принимает код или подтверждение не появляется, продолжайте использовать личную ссылку подписки — для подключения VPN этого достаточно."
+                                        <TextBlock Text="Если бот не принимает код или подтверждение не появляется, повторите вход или обратитесь в поддержку."
                                                    Foreground="#C7D8EC" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
