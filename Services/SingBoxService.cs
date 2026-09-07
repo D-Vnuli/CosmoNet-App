@@ -22,6 +22,8 @@ public sealed class SingBoxService
         }
     }
 
+    public FileStream LockConfigForExecution(string configPath) => new(configPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
     public async Task<CoreDiagnosticResult> CheckConfigAsync(
         string configPath,
         CancellationToken cancellationToken = default)
@@ -167,13 +169,25 @@ public sealed class SingBoxService
 
     public void Stop()
     {
-        if (!IsRunning)
+        var process = _process;
+        _process = null;
+
+        if (process is null)
         {
             return;
         }
 
-        _process?.Kill(entireProcessTree: true);
-        _process?.Dispose();
-        _process = null;
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(5000);
+            }
+        }
+        finally
+        {
+            process.Dispose();
+        }
     }
 }

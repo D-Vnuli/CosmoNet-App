@@ -39,7 +39,7 @@ public sealed class SubscriptionService
             };
         }
 
-        var uri = SecurityPolicy.RequireHttps(source, "ссылка подписки");
+        var uri = SecurityPolicy.RequireSubscriptionUrl(source);
 
         using var response = await _httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();

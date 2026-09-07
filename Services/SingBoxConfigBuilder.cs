@@ -1,3 +1,4 @@
+using System.Net.NetworkInformation;
 using System.Text.Json;
 using CosmoNet.App.Models;
 
@@ -14,6 +15,7 @@ public sealed class SingBoxConfigBuilder
         IReadOnlyList<VpnProfile> profiles,
         TrafficMode trafficMode,
         IReadOnlyList<string> selectedProcessNames,
+        IReadOnlyCollection<string>? selectedProcessPaths = null,
         CancellationToken cancellationToken = default,
         string? outputPath = null)
     {
@@ -35,8 +37,9 @@ public sealed class SingBoxConfigBuilder
             .ThenBy(profile => profile.Server, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var physicalInterface = FindPhysicalInterfaceName();
         var profileOutbounds = orderedProfiles
-            .Select((profile, index) => BuildOutbound(profile, index))
+            .Select((profile, index) => BuildOutbound(profile, index, physicalInterface))
             .ToList<object>();
 
         var profileTags = Enumerable.Range(0, profileOutbounds.Count)
@@ -56,21 +59,21 @@ public sealed class SingBoxConfigBuilder
             ["interrupt_exist_connections"] = false
         });
 
-        outbounds.Add(new Dictionary<string, object?> { ["type"] = "direct", ["tag"] = "direct" });
+        outbounds.Add(BuildDirectOutbound(physicalInterface));
         outbounds.Add(new Dictionary<string, object?> { ["type"] = "block", ["tag"] = "block" });
 
         var config = new Dictionary<string, object?>
         {
             ["log"] = new Dictionary<string, object?>
             {
-                ["level"] = "info",
+                ["level"] = "warn",
                 ["timestamp"] = true,
                 ["output"] = AppPaths.SingBoxLogPath
             },
             ["dns"] = BuildDns(),
-            ["inbounds"] = new object[] { BuildTunInbound() },
+            ["inbounds"] = new object[] { BuildTunInbound(orderedProfiles), BuildVpnProxyInbound() },
             ["outbounds"] = outbounds,
-            ["route"] = BuildRoute(trafficMode, selectedProcessNames)
+            ["route"] = BuildRoute(trafficMode, selectedProcessNames, selectedProcessPaths)
         };
 
         var configPath = string.IsNullOrWhiteSpace(outputPath)
@@ -97,7 +100,7 @@ public sealed class SingBoxConfigBuilder
         {
             ["log"] = new Dictionary<string, object?>
             {
-                ["level"] = "info",
+                ["level"] = "warn",
                 ["timestamp"] = true,
                 ["output"] = AppPaths.SingBoxLogPath,
             },
@@ -150,14 +153,14 @@ public sealed class SingBoxConfigBuilder
         {
             ["log"] = new Dictionary<string, object?>
             {
-                ["level"] = "info",
+                ["level"] = "warn",
                 ["timestamp"] = true,
                 ["output"] = AppPaths.SingBoxLogPath,
             },
             ["dns"] = dns,
             ["inbounds"] = new object[]
             {
-                BuildTunInbound(),
+                BuildTunInbound(new[] { profile }),
                 new Dictionary<string, object?>
                 {
                     ["type"] = "mixed",
@@ -198,6 +201,7 @@ public sealed class SingBoxConfigBuilder
     {
         return new Dictionary<string, object?>
         {
+            ["strategy"] = "prefer_ipv4",
             ["servers"] = new object[]
             {
                 new Dictionary<string, object?>
@@ -233,9 +237,9 @@ public sealed class SingBoxConfigBuilder
         };
     }
 
-    private static Dictionary<string, object?> BuildTunInbound()
+    private static Dictionary<string, object?> BuildTunInbound(IReadOnlyList<VpnProfile>? profiles = null)
     {
-        return new Dictionary<string, object?>
+        var inbound = new Dictionary<string, object?>
         {
             ["type"] = "tun",
             ["tag"] = "tun-in",
@@ -243,14 +247,36 @@ public sealed class SingBoxConfigBuilder
             ["address"] = new[] { "172.19.0.1/30", "fdfe:dcba:9876::1/126" },
             ["mtu"] = 1400,
             ["auto_route"] = true,
-            ["strict_route"] = false,
+            ["strict_route"] = true,
             ["stack"] = "mixed"
         };
+
+        var routeExclusions = profiles
+            ?.Select(profile => profile.Server)
+            .Where(server => System.Net.IPAddress.TryParse(server, out _))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(server => System.Net.IPAddress.Parse(server).AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? $"{server}/32" : $"{server}/128")
+            .ToArray() ?? [];
+
+        if (routeExclusions.Length > 0)
+        {
+            inbound["route_exclude_address"] = routeExclusions;
+        }
+
+        return inbound;
     }
 
+    private static Dictionary<string, object?> BuildVpnProxyInbound() => new()
+    {
+        ["type"] = "mixed",
+        ["tag"] = "vpn-proxy",
+        ["listen"] = "127.0.0.1",
+        ["listen_port"] = SystemProxyService.VpnPort,
+    };
     private static Dictionary<string, object?> BuildRoute(
         TrafficMode trafficMode,
-        IReadOnlyList<string> selectedProcessNames)
+        IReadOnlyList<string> selectedProcessNames,
+        IReadOnlyCollection<string>? selectedProcessPaths)
     {
         var route = new Dictionary<string, object?>
         {
@@ -263,6 +289,11 @@ public sealed class SingBoxConfigBuilder
         {
             new Dictionary<string, object?>
             {
+                ["inbound"] = new[] { "vpn-proxy" },
+                ["outbound"] = "cosmonet-auto"
+            },
+            new Dictionary<string, object?>
+            {
                 ["protocol"] = "dns",
                 ["action"] = "hijack-dns"
             }
@@ -270,6 +301,19 @@ public sealed class SingBoxConfigBuilder
 
         if (trafficMode == TrafficMode.SelectedApps)
         {
+            foreach (var processPath in selectedProcessPaths ?? Array.Empty<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(processPath))
+                {
+                    rules.Add(new Dictionary<string, object?>
+                    {
+                        ["inbound"] = new[] { "tun-in" },
+                        ["process_path"] = processPath,
+                        ["outbound"] = "cosmonet-auto"
+                    });
+                }
+            }
+
             rules.Add(
                 new Dictionary<string, object?>
                 {
@@ -288,7 +332,29 @@ public sealed class SingBoxConfigBuilder
         return route;
     }
 
-    private static Dictionary<string, object?> BuildOutbound(VpnProfile profile, int index)
+    private static string? FindPhysicalInterfaceName()
+    {
+        return NetworkInterface.GetAllNetworkInterfaces()
+            .Where(network => network.OperationalStatus == OperationalStatus.Up)
+            .Where(network => !string.Equals(network.Description, "sing-tun Tunnel", StringComparison.OrdinalIgnoreCase))
+            .Where(network => network.GetIPProperties().GatewayAddresses.Any(gateway =>
+                gateway.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))
+            .Select(network => network.Name)
+            .FirstOrDefault();
+    }
+
+    private static Dictionary<string, object?> BuildDirectOutbound(string? physicalInterface)
+    {
+        var outbound = new Dictionary<string, object?> { ["type"] = "direct", ["tag"] = "direct" };
+        if (!string.IsNullOrWhiteSpace(physicalInterface))
+        {
+            outbound["bind_interface"] = physicalInterface;
+        }
+
+        return outbound;
+    }
+
+    private static Dictionary<string, object?> BuildOutbound(VpnProfile profile, int index, string? physicalInterface = null)
     {
         var outbound = new Dictionary<string, object?>
         {
@@ -298,6 +364,11 @@ public sealed class SingBoxConfigBuilder
             ["server_port"] = profile.Port,
             ["uuid"] = profile.Uuid
         };
+
+        if (!string.IsNullOrWhiteSpace(physicalInterface))
+        {
+            outbound["bind_interface"] = physicalInterface;
+        }
 
         var flow = profile.Query.GetValueOrDefault("flow", "");
         if (string.IsNullOrWhiteSpace(flow) &&

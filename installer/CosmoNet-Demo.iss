@@ -1,5 +1,5 @@
 #define MyAppName "CosmoNet"
-#define MyAppVersion "0.1.0-demo"
+#define MyAppVersion "0.2.5"
 #define MyAppPublisher "CosmoNet"
 #define MyAppExeName "CosmoNet.App.exe"
 
@@ -12,13 +12,14 @@ DefaultDirName={autopf}\CosmoNet
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\artifacts
-OutputBaseFilename=CosmoNet-Demo-Setup
+OutputBaseFilename=CosmoNet-Setup-0.2.5
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
+PrivilegesRequired=admin
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -34,4 +35,4 @@ Name: "{autoprograms}\CosmoNet"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\CosmoNet"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Запустить CosmoNet"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Запустить CosmoNet"; Flags: nowait postinstall skipifsilent runascurrentuser

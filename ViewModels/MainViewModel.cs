@@ -26,6 +26,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly SingBoxConfigBuilder _configBuilder = new();
     private readonly SingBoxService _singBoxService = new();
     private readonly SystemProxyService _systemProxyService = new();
+    private readonly MihomoConfigBuilder _mihomoConfigBuilder = new();
+    private readonly MihomoService _mihomoService = new();
+    private readonly TunDnsService _tunDnsService = new();
     private readonly ApplicationIconService _applicationIconService = new();
     private readonly DispatcherTimer _serverAvailabilityTimer;
     private readonly DispatcherTimer _subscriptionRefreshTimer;
@@ -344,14 +347,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public string CoreStatus => _singBoxService.IsCoreAvailable
-        ? "Ядро sing-box найдено"
-        : "Нужно добавить Resources\\sing-box\\sing-box.exe";
+    public string CoreStatus => _mihomoService.IsCoreAvailable
+        ? "Ядро Mihomo найдено"
+        : "Нужно добавить Resources\\mihomo\\mihomo.exe";
 
-    public string AdminStatus => _singBoxService.IsAdministrator
+    public string AdminStatus => _mihomoService.IsAdministrator
         ? "Запущено с правами администратора"
         : "Для подключения нужен запуск от администратора";
-
     public string SubscriptionExpiresText => Subscription.ExpiresAt is null
         ? (EffectiveSubscriptionStatus == SubscriptionStatus.Active ? "\u0411\u0435\u0437\u0433\u0440\u0430\u043d\u0438\u0447\u043d\u043e" : "\u041e\u0436\u0438\u0434\u0430\u0435\u0442 Telegram")
         : Subscription.ExpiresAt.Value.ToLocalTime().ToString("dd.MM.yyyy");
@@ -732,7 +734,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         Process.Start(new ProcessStartInfo
         {
-            FileName = link,
+            FileName = SecurityPolicy.RequireTelegramDeepLink(link).AbsoluteUri,
             UseShellExecute = true,
         });
     }
@@ -741,19 +743,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         var browserPath = FindTelegramWebBrowser();
         if (string.IsNullOrWhiteSpace(browserPath))
         {
-            throw new FileNotFoundException("Не найден Microsoft Edge или Google Chrome для авторизации в Telegram Web.");
+            throw new FileNotFoundException("Telegram Web browser is unavailable.");
         }
 
         var browserProfile = Path.Combine(AppPaths.DataDirectory, "telegram-web-auth");
         Directory.CreateDirectory(browserProfile);
-        Process.Start(new ProcessStartInfo
-        {
-            FileName = browserPath,
-            Arguments = $"--proxy-server=\"http://127.0.0.1:{SystemProxyService.BootstrapPort}\" --proxy-bypass-list=\"<-loopback>\" --disable-quic --user-data-dir=\"{browserProfile}\" \"{link}\"",
-            UseShellExecute = true,
-        });
+        var startInfo = new ProcessStartInfo { FileName = browserPath, UseShellExecute = false };
+        startInfo.ArgumentList.Add($"--proxy-server=http://127.0.0.1:{SystemProxyService.BootstrapPort}");
+        startInfo.ArgumentList.Add("--proxy-bypass-list=<-loopback>");
+        startInfo.ArgumentList.Add("--disable-quic");
+        startInfo.ArgumentList.Add($"--user-data-dir={browserProfile}");
+        startInfo.ArgumentList.Add(SecurityPolicy.RequireTelegramWebLink(link).AbsoluteUri);
+        Process.Start(startInfo);
     }
-
     private static string? FindTelegramWebBrowser()
     {
         var candidates = new[]
@@ -778,6 +780,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         var configPath = desktopMode
             ? await _configBuilder.WriteBootstrapDesktopConfigAsync(profiles[0], Path.GetFileName(telegramDesktopPath!))
             : await _configBuilder.WriteBootstrapConfigAsync(profiles[0]);
+        using var configLock = _singBoxService.LockConfigForExecution(configPath);
         var diagnostic = await _singBoxService.CheckConfigAsync(configPath);
         if (!diagnostic.Success)
         {
@@ -999,6 +1002,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
+        if (_isBootstrapVpnActive)
+        {
+            if (!string.IsNullOrEmpty(_authSessionId))
+            {
+                StatusText = "Завершаем авторизацию в Telegram...";
+                return;
+            }
+
+            StopBootstrapVpn();
+            await ConnectAsync();
+            return;
+        }
+
         if (IsConnected)
         {
             await DisconnectAsync();
@@ -1019,21 +1035,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             }
 
             var selectedProcesses = GetSelectedProcessNames();
-            AppendDiagnosticLog($"Запуск sing-box. Профили: {GetProfileTypes()}.");
-            StatusText = "Готовим конфиг...";
-            var configPath = await _configBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses);
+            var selectedProcessPaths = GetSelectedApplicationPaths().Values.ToArray();
+            AppendDiagnosticLog($"Запуск Mihomo. Профили: {GetProfileTypes()}.");
+            StatusText = "Готовим конфигурацию...";
+            var configPath = await _mihomoConfigBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses, selectedProcessPaths);
             LastConfigPath = configPath;
-            StatusText = "Проверяем конфиг sing-box...";
-            var diagnostic = await _singBoxService.CheckConfigAsync(configPath);
+            StatusText = "Проверяем конфигурацию Mihomo...";
+            using var configLock = _mihomoService.LockConfigForExecution(configPath);
+            var diagnostic = await _mihomoService.CheckConfigAsync(configPath);
             ApplyDiagnosticResult(diagnostic);
             if (!diagnostic.Success)
             {
-                AppendDiagnosticLog("Ошибка проверки конфигурации sing-box. Код: CONFIG_CHECK_FAILED.");
+                AppendDiagnosticLog("Ошибка проверки конфигурации Mihomo. Код: CONFIG_CHECK_FAILED.");
                 throw new InvalidOperationException(diagnostic.Message);
             }
 
-            await _singBoxService.StartAsync(configPath, useTunMode: true);
-            AppendDiagnosticLog("sing-box запущен. Подключение успешно.");
+            await _mihomoService.StartAsync(configPath, useTunMode: true);
+            _systemProxyService.Restore();
+            AppendDiagnosticLog("Mihomo запущен. Подключение успешно.");
             IsConnected = true;
             await RefreshServerAvailabilityAsync();
             LastRefresh ??= DateTimeOffset.Now;
@@ -1050,11 +1069,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         if (_isBootstrapVpnActive)
         {
             StopBootstrapVpn();
-            StatusText = "Временный VPN отключен.";
+            StatusText = "Временный VPN отключён.";
             return Task.CompletedTask;
         }
-        AppendDiagnosticLog("Остановка процесса sing-box.");
-        _singBoxService.Stop();
+        AppendDiagnosticLog("Остановка процесса Mihomo.");
+        _systemProxyService.Restore();
+        _mihomoService.Stop();
         IsConnected = false;
         StatusText = "Отключено";
         _ = RefreshServerAvailabilityAsync();
@@ -1074,10 +1094,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             }
 
             var selectedProcesses = GetSelectedProcessNames();
-            StatusText = "Генерируем и проверяем конфиг...";
-            var configPath = await _configBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses);
+            var selectedProcessPaths = GetSelectedApplicationPaths().Values.ToArray();
+            StatusText = "Генерируем и проверяем конфигурацию Mihomo...";
+            var configPath = await _mihomoConfigBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses, selectedProcessPaths);
             LastConfigPath = configPath;
-            var diagnostic = await _singBoxService.CheckConfigAsync(configPath);
+            using var configLock = _mihomoService.LockConfigForExecution(configPath);
+            var diagnostic = await _mihomoService.CheckConfigAsync(configPath);
             ApplyDiagnosticResult(diagnostic);
             StatusText = diagnostic.Message;
         });
@@ -1450,9 +1472,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         return string.Join(Environment.NewLine,
         [
             headline,
-            $"Ядро: {AppPaths.BundledSingBoxPath}",
+            $"Ядро: {AppPaths.BundledMihomoPath}",
             $"Конфиг: {LastConfigPath}",
-            $"Администратор: {(_singBoxService.IsAdministrator ? "да" : "нет")}",
+            $"Администратор: {(_mihomoService.IsAdministrator ? "да" : "нет")}",
             $"Хранилище секретов: {AppPaths.SecretSettingsPath}",
             $"Режим трафика: {TrafficModeText}",
             SelectedApplicationsText

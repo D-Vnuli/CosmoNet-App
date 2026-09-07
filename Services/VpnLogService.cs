@@ -39,7 +39,7 @@ public sealed class VpnLogService : IDisposable
     {
         AppPaths.EnsureDataDirectory();
         await using var stream = new FileStream(
-            AppPaths.SingBoxLogPath,
+            AppPaths.MihomoLogPath,
             FileMode.OpenOrCreate,
             FileAccess.Write,
             FileShare.ReadWrite);
@@ -97,7 +97,7 @@ public sealed class VpnLogService : IDisposable
     private async Task<string> ReadNewContentAsync()
     {
         await using var stream = new FileStream(
-            AppPaths.SingBoxLogPath,
+            AppPaths.MihomoLogPath,
             FileMode.OpenOrCreate,
             FileAccess.Read,
             FileShare.ReadWrite);

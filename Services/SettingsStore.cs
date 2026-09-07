@@ -28,10 +28,39 @@ public sealed class SettingsStore
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
     {
         AppPaths.EnsureDataDirectory();
+        settings.HasExplicitTrafficModeChoice = true;
+        settings.TrafficModeConfigurationVersion = AppSettings.CurrentTrafficModeConfigurationVersion;
 
-        await using (var stream = File.Create(AppPaths.SettingsPath))
+        var temporaryPath = $"{AppPaths.SettingsPath}.{Guid.NewGuid():N}.tmp";
+        try
         {
-            await JsonSerializer.SerializeAsync(stream, settings, JsonOptions, cancellationToken);
+            await using (var stream = new FileStream(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                useAsync: true))
+            {
+                await JsonSerializer.SerializeAsync(stream, settings, JsonOptions, cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+            }
+
+            if (File.Exists(AppPaths.SettingsPath))
+            {
+                File.Replace(temporaryPath, AppPaths.SettingsPath, destinationBackupFileName: null);
+            }
+            else
+            {
+                File.Move(temporaryPath, AppPaths.SettingsPath);
+            }
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
         }
 
         var secrets = await _secretSettingsStore.LoadAsync(cancellationToken);
@@ -46,9 +75,44 @@ public sealed class SettingsStore
             return new AppSettings();
         }
 
-        await using var stream = File.OpenRead(AppPaths.SettingsPath);
-        return await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions, cancellationToken)
-            ?? new AppSettings();
+        AppSettings settings;
+        try
+        {
+            await using var stream = File.OpenRead(AppPaths.SettingsPath);
+            settings = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions, cancellationToken)
+                ?? new AppSettings();
+        }
+        catch (JsonException)
+        {
+            PreserveCorruptSettings();
+            return new AppSettings();
+        }
+
+        if (settings.TrafficModeConfigurationVersion < AppSettings.CurrentTrafficModeConfigurationVersion)
+        {
+            settings.TrafficMode = TrafficMode.AllTraffic;
+        }
+
+        return settings;
+    }
+
+    private static void PreserveCorruptSettings()
+    {
+        try
+        {
+            var backupPath = Path.Combine(
+                AppPaths.DataDirectory,
+                $"settings.corrupt-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}.json");
+            File.Move(AppPaths.SettingsPath, backupPath);
+        }
+        catch (IOException)
+        {
+            // A subsequent save will replace the invalid file if it could not be archived now.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Settings recovery must not prevent the application from starting.
+        }
     }
 
     private static async Task<string> TryReadLegacySubscriptionUrlAsync(CancellationToken cancellationToken)

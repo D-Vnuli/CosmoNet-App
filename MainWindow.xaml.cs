@@ -101,6 +101,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Loaded += OnLoaded;
         Closing += OnWindowClosing;
         Closed += OnWindowClosed;
+        StateChanged += OnWindowStateChanged;
         _trayIcon = CreateTrayIcon();
     }
 
@@ -371,7 +372,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (args.Button == Forms.MouseButtons.Left)
             {
-                Dispatcher.BeginInvoke(ShowFromTray);
+                Dispatcher.BeginInvoke(ToggleTrayVisibility);
             }
         };
         return trayIcon;
@@ -414,22 +415,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         WindowState = WindowState.Minimized;
     }
 
+    private void OnWindowStateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized)
+        {
+            HideToTray(showNotification: false);
+        }
+    }
+
     private void OnHideToTrayClick(object sender, RoutedEventArgs e)
     {
         HideToTray();
     }
 
-    private void HideToTray()
+    private void HideToTray(bool showNotification = true)
     {
+        ShowInTaskbar = false;
         Hide();
-        _trayIcon.ShowBalloonTip(1200, "CosmoNet", "Приложение продолжает работать в трее.", Forms.ToolTipIcon.Info);
+        if (showNotification)
+        {
+            _trayIcon.ShowBalloonTip(1200, "CosmoNet", "Приложение продолжает работать в трее.", Forms.ToolTipIcon.Info);
+        }
     }
 
     private void ShowFromTray()
     {
+        ShowInTaskbar = true;
         Show();
         WindowState = WindowState.Normal;
         Activate();
+    }
+
+    private void ToggleTrayVisibility()
+    {
+        if (!IsVisible || WindowState == WindowState.Minimized)
+        {
+            ShowFromTray();
+            return;
+        }
+
+        HideToTray();
     }
 
     private void ExitApplication()

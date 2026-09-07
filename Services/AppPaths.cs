@@ -11,12 +11,20 @@ public static class AppPaths
     public static string GeneratedConfigPath => Path.Combine(DataDirectory, "sing-box.json");
     public static string BootstrapConfigPath => Path.Combine(DataDirectory, "sing-box-bootstrap.json");
     public static string SingBoxLogPath => Path.Combine(DataDirectory, "sing-box.log");
+    public static string MihomoConfigPath => Path.Combine(DataDirectory, "mihomo.yaml");
+    public static string MihomoLogPath => Path.Combine(DataDirectory, "mihomo.log");
 
     public static string BundledSingBoxPath => Path.Combine(
         AppContext.BaseDirectory,
         "Resources",
         "sing-box",
         "sing-box.exe");
+
+    public static string BundledMihomoPath => Path.Combine(
+        AppContext.BaseDirectory,
+        "Resources",
+        "mihomo",
+        "mihomo.exe");
 
     public static void EnsureDataDirectory()
     {
