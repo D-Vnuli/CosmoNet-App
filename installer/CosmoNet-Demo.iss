@@ -1,5 +1,5 @@
 #define MyAppName "CosmoNet"
-#define MyAppVersion "0.2.5"
+#define MyAppVersion "0.2.8"
 #define MyAppPublisher "CosmoNet"
 #define MyAppExeName "CosmoNet.App.exe"
 
@@ -12,7 +12,7 @@ DefaultDirName={autopf}\CosmoNet
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\artifacts
-OutputBaseFilename=CosmoNet-Setup-0.2.5
+OutputBaseFilename=CosmoNet-Setup-0.2.8
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -33,6 +33,3 @@ Source: "..\artifacts\publish\*"; DestDir: "{app}"; Flags: ignoreversion recurse
 [Icons]
 Name: "{autoprograms}\CosmoNet"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\CosmoNet"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-
-[Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Запустить CosmoNet"; Flags: nowait postinstall skipifsilent runascurrentuser

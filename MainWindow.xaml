@@ -163,6 +163,7 @@
         </Style>
     </Window.Resources>
 
+    <Border Background="#051024" CornerRadius="18" ClipToBounds="True">
     <Grid>
         <Image Source="pack://siteoforigin:,,,/Resources/cosmic-background.png" Stretch="UniformToFill" />
         <Rectangle Fill="#42020B1D" IsHitTestVisible="False" />
@@ -216,7 +217,7 @@
                 </StackPanel>
 </Grid>
 
-            <TabControl x:Name="MainViews" Grid.Row="1" Margin="0,12,0,0" Background="Transparent" BorderThickness="0">
+            <TabControl x:Name="MainViews" Grid.Row="1" Margin="0,12,0,0" Background="Transparent" BorderThickness="0" SelectionChanged="OnMainViewsSelectionChanged">
                 <TabControl.Template>
                     <ControlTemplate TargetType="TabControl"><ContentPresenter Content="{TemplateBinding SelectedContent}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" /></ControlTemplate>
                 </TabControl.Template>
@@ -226,6 +227,7 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
+                        <Canvas x:Name="StarfieldCanvas" Grid.RowSpan="2" IsHitTestVisible="False" ClipToBounds="True" />
                         <StackPanel Grid.Row="0" Width="348" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Button Style="{StaticResource PowerButton}" Command="{Binding PowerCommand}" ToolTip="Подключить или отключить VPN" AutomationProperties.Name="Подключить или отключить VPN" HorizontalAlignment="Center" />
                             <TextBlock Text="{Binding ConnectionStateText}" Foreground="White" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,24,0,0" />
@@ -312,7 +314,11 @@
                                 </Border>
                             </Button>
                         </StackPanel>
-                        <TextBlock Grid.Row="1" Text="CosmoNet • Windows VPN-клиент" Foreground="#7895B5" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Bottom" />
+                        <TextBlock Grid.Row="1" Foreground="#7895B5" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Bottom">
+                            <Run Text="CosmoNet v" />
+                            <Run Text="{Binding AppVersion, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay}" />
+                            <Run Text=" • Windows VPN-клиент" />
+                        </TextBlock>
                     </Grid>
                 </TabItem>
 
@@ -779,4 +785,5 @@
             <TextBlock Text="Настройки сохранены" Foreground="White" FontWeight="SemiBold" />
         </Border>
     </Grid>
+    </Border>
 </Window>

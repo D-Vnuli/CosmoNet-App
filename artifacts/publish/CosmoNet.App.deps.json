@@ -7,7 +7,7 @@
   "targets": {
     ".NETCoreApp,Version=v9.0": {},
     ".NETCoreApp,Version=v9.0/win-x64": {
-      "CosmoNet.App/1.0.0": {
+      "CosmoNet.App/0.2.8": {
         "dependencies": {
           "runtimepack.Microsoft.NETCore.App.Runtime.win-x64": "9.0.9",
           "runtimepack.Microsoft.WindowsDesktop.App.Runtime.win-x64": "9.0.9"
@@ -983,7 +983,7 @@
     }
   },
   "libraries": {
-    "CosmoNet.App/1.0.0": {
+    "CosmoNet.App/0.2.8": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

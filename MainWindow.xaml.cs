@@ -1,10 +1,12 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using CosmoNet.App.Models;
 using CosmoNet.App.ViewModels;
 using Forms = System.Windows.Forms;
@@ -13,6 +15,7 @@ namespace CosmoNet.App;
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
+    private const int RoundedWindowCornerRadius = 18;
     private readonly MainViewModel _viewModel = new();
     private bool _isMenuOpen;
     private bool _isSubscriptionDialogOpen;
@@ -24,10 +27,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _selectedTariffDevices = "1 \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e";
     private string _subscriptionNotificationText = "";
     private readonly Forms.NotifyIcon _trayIcon;
+    private readonly DispatcherTimer _starfieldTimer = new(DispatcherPriority.Background);
+    private readonly Random _starfieldRandom = new();
+    private bool _spawnSecondStar;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ICommand ToggleMenuCommand { get; }
+
+    public string AppVersion => GetType().Assembly.GetName().Version?.ToString(3) ?? "0.2.8";
 
     public bool IsMenuOpen
     {
@@ -102,14 +110,182 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Closing += OnWindowClosing;
         Closed += OnWindowClosed;
         StateChanged += OnWindowStateChanged;
+        _starfieldTimer.Tick += OnStarfieldTimerTick;
         _trayIcon = CreateTrayIcon();
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        ApplyRoundedWindowRegion();
         AnimateWindowEntrance();
+        UpdateStarfieldState();
         await _viewModel.InitializeAsync();
     }
+
+    private void OnMainViewsSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ReferenceEquals(e.Source, MainViews))
+        {
+            UpdateStarfieldState();
+        }
+    }
+
+    private void UpdateStarfieldState()
+    {
+        if (IsLoaded && IsVisible && WindowState != WindowState.Minimized && HomeTab.IsSelected)
+        {
+            if (!_starfieldTimer.IsEnabled)
+            {
+                ScheduleNextStarBurst();
+            }
+
+            return;
+        }
+
+        StopStarfield();
+    }
+
+    private void OnStarfieldTimerTick(object? sender, EventArgs e)
+    {
+        _starfieldTimer.Stop();
+        SpawnShootingStar();
+
+        if (_spawnSecondStar)
+        {
+            _spawnSecondStar = false;
+            ScheduleNextStarBurst();
+            return;
+        }
+
+        if (_starfieldRandom.NextDouble() < 0.35)
+        {
+            _spawnSecondStar = true;
+            _starfieldTimer.Interval = TimeSpan.FromMilliseconds(_starfieldRandom.Next(650, 1251));
+            _starfieldTimer.Start();
+            return;
+        }
+
+        ScheduleNextStarBurst();
+    }
+
+    private void ScheduleNextStarBurst()
+    {
+        if (!IsVisible || WindowState == WindowState.Minimized || !HomeTab.IsSelected)
+        {
+            return;
+        }
+
+        _spawnSecondStar = false;
+        _starfieldTimer.Interval = TimeSpan.FromMilliseconds(_starfieldRandom.Next(5000, 10001));
+        _starfieldTimer.Start();
+    }
+
+    private void SpawnShootingStar()
+    {
+        var width = StarfieldCanvas.ActualWidth;
+        var height = StarfieldCanvas.ActualHeight;
+        if (width < 100 || height < 100)
+        {
+            ScheduleNextStarBurst();
+            return;
+        }
+
+        var tailLength = _starfieldRandom.Next(34, 57);
+        var travelX = _starfieldRandom.Next(110, 181);
+        var travelY = _starfieldRandom.Next(48, 96);
+        var duration = TimeSpan.FromMilliseconds(_starfieldRandom.Next(900, 1451));
+        var startingX = _starfieldRandom.NextDouble() * Math.Max(1, width - tailLength - travelX / 2);
+        var startingY = 20 + _starfieldRandom.NextDouble() * Math.Max(1, height * 0.72 - 40);
+
+        var meteor = new Grid
+        {
+            Width = tailLength,
+            Height = 8,
+            Opacity = 0,
+            RenderTransformOrigin = new System.Windows.Point(0.5, 0.5),
+            IsHitTestVisible = false
+        };
+        var tail = new System.Windows.Shapes.Rectangle
+        {
+            Width = tailLength,
+            Height = 1.4,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            Fill = new LinearGradientBrush(
+                System.Windows.Media.Color.FromArgb(0, 154, 207, 255),
+                System.Windows.Media.Color.FromArgb(235, 242, 251, 255),
+                new System.Windows.Point(0, 0.5),
+                new System.Windows.Point(1, 0.5))
+        };
+        var head = new System.Windows.Shapes.Ellipse
+        {
+            Width = 3.4,
+            Height = 3.4,
+            Fill = new SolidColorBrush(System.Windows.Media.Color.FromRgb(245, 252, 255)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center
+        };
+        meteor.Children.Add(tail);
+        meteor.Children.Add(head);
+
+        Canvas.SetLeft(meteor, startingX);
+        Canvas.SetTop(meteor, startingY);
+        StarfieldCanvas.Children.Add(meteor);
+
+        var translate = new TranslateTransform();
+        var transforms = new TransformGroup();
+        transforms.Children.Add(new RotateTransform(Math.Atan2(travelY, travelX) * 180 / Math.PI));
+        transforms.Children.Add(translate);
+        meteor.RenderTransform = transforms;
+
+        var opacity = new DoubleAnimationUsingKeyFrames();
+        opacity.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0.88, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(110))));
+        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0.68, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(duration.TotalMilliseconds * 0.68))));
+        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(duration)));
+        opacity.Completed += (_, _) => StarfieldCanvas.Children.Remove(meteor);
+
+        meteor.BeginAnimation(OpacityProperty, opacity);
+        translate.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(0, travelX, duration));
+        translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, travelY, duration));
+    }
+
+    private void StopStarfield()
+    {
+        _starfieldTimer.Stop();
+        _spawnSecondStar = false;
+        StarfieldCanvas?.Children.Clear();
+    }
+
+    private void ApplyRoundedWindowRegion()
+    {
+        var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var width = (int)Math.Ceiling(ActualWidth * dpi.DpiScaleX);
+        var height = (int)Math.Ceiling(ActualHeight * dpi.DpiScaleY);
+        var diameter = (int)Math.Ceiling(RoundedWindowCornerRadius * 2 * dpi.DpiScaleX);
+        var region = CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter);
+
+        if (region != IntPtr.Zero && SetWindowRgn(handle, region, true) == 0)
+        {
+            DeleteObject(region);
+        }
+    }
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int width, int height);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(IntPtr handle, IntPtr region, bool redraw);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteObject(IntPtr objectHandle);
 
     private void AnimateWindowEntrance()
     {
@@ -391,6 +567,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OnWindowClosed(object? sender, EventArgs e)
     {
+        StopStarfield();
         _toastCancellation?.Cancel();
         _trayIcon.Dispose();
         _viewModel.DisconnectCommand.Execute(null);
@@ -430,6 +607,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void HideToTray(bool showNotification = true)
     {
+        StopStarfield();
         ShowInTaskbar = false;
         Hide();
         if (showNotification)
@@ -444,6 +622,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Show();
         WindowState = WindowState.Normal;
         Activate();
+        UpdateStarfieldState();
     }
 
     private void ToggleTrayVisibility()
