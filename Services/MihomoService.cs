@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Principal;
 using CosmoNet.App.Models;
 
@@ -7,6 +9,9 @@ namespace CosmoNet.App.Services;
 
 public sealed class MihomoService
 {
+    private const int MixedProxyPort = 20809;
+    private static readonly TimeSpan CoreStartTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ProcessStartTimeout = TimeSpan.FromSeconds(8);
     private Process? _process;
 
     public bool IsRunning => _process is { HasExited: false };
@@ -75,6 +80,10 @@ public sealed class MihomoService
         {
             throw new FileNotFoundException("Не найден mihomo.exe.", AppPaths.BundledMihomoPath);
         }
+        if (await IsLocalPortOpenAsync(cancellationToken))
+        {
+            throw new InvalidOperationException($"Локальный VPN-порт {MixedProxyPort} уже занят другим приложением.");
+        }
 
         var startElevated = useTunMode && !IsAdministrator;
         var startInfo = new ProcessStartInfo
@@ -90,29 +99,120 @@ public sealed class MihomoService
         };
         if (startElevated) startInfo.Verb = "runas";
 
-        try { _process = Process.Start(startInfo); }
+        Process? process;
+        try { process = await StartProcessAsync(startInfo, cancellationToken); }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
             throw new InvalidOperationException("Подключение отменено: подтвердите запрос Windows на запуск VPN.");
         }
-        if (_process is null) throw new InvalidOperationException("Не удалось запустить Mihomo.");
+        if (process is null) throw new InvalidOperationException("Не удалось запустить Mihomo.");
 
-        var outputTask = startElevated ? null : _process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var errorTask = startElevated ? null : _process.StandardError.ReadToEndAsync(cancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-        if (!_process.HasExited) return;
+        var outputTask = startElevated ? null : process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var errorTask = startElevated ? null : process.StandardError.ReadToEndAsync(cancellationToken);
 
-        var details = "";
-        if (!startElevated)
+        var processHandled = false;
+        try
         {
-            details = string.Join(Environment.NewLine, new[] { await outputTask!, await errorTask! }
+            if (await WaitForProxyPortAsync(process, cancellationToken))
+            {
+                _process = process;
+                return;
+            }
+
+            var details = await StopAndReadDetailsAsync(process, outputTask, errorTask);
+            processHandled = true;
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(details)
+                ? $"Mihomo не открыл локальный VPN-порт {MixedProxyPort} за {CoreStartTimeout.TotalSeconds:0} сек."
+                : $"Mihomo не запустился: {details}");
+        }
+        catch
+        {
+            if (!processHandled && !ReferenceEquals(_process, process))
+            {
+                await StopAndReadDetailsAsync(process, outputTask, errorTask);
+            }
+
+            throw;
+        }
+    }
+
+    private static async Task<Process?> StartProcessAsync(ProcessStartInfo startInfo, CancellationToken cancellationToken)
+    {
+        var startTask = Task.Run(() => Process.Start(startInfo), CancellationToken.None);
+        var timeoutTask = Task.Delay(ProcessStartTimeout, cancellationToken);
+        if (await Task.WhenAny(startTask, timeoutTask) != startTask)
+        {
+            _ = startTask.ContinueWith(task =>
+            {
+                if (task.Status == TaskStatus.RanToCompletion && task.Result is { HasExited: false } lateProcess)
+                {
+                    try { lateProcess.Kill(entireProcessTree: true); } catch { }
+                    lateProcess.Dispose();
+                }
+            }, TaskScheduler.Default);
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new TimeoutException("Windows не ответила на запрос запуска VPN-ядра.");
+        }
+
+        return await startTask;
+    }
+
+    private static async Task<bool> WaitForProxyPortAsync(Process process, CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < CoreStartTimeout)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (process.HasExited) return false;
+            if (await IsLocalPortOpenAsync(cancellationToken)) return true;
+            await Task.Delay(200, cancellationToken);
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> IsLocalPortOpenAsync(CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMilliseconds(500));
+        using var client = new TcpClient();
+        try
+        {
+            await client.ConnectAsync(IPAddress.Loopback, MixedProxyPort, timeout.Token);
+            return true;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<string> StopAndReadDetailsAsync(Process process, Task<string>? outputTask, Task<string>? errorTask)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync();
+            }
+
+            if (outputTask is null || errorTask is null) return "";
+            return string.Join(Environment.NewLine, new[] { await outputTask, await errorTask }
                 .Where(text => !string.IsNullOrWhiteSpace(text))).Trim();
         }
-        _process.Dispose();
-        _process = null;
-        throw new InvalidOperationException(string.IsNullOrWhiteSpace(details)
-            ? "Mihomo завершился сразу после запуска."
-            : $"Mihomo не запустился: {details}");
+        catch
+        {
+            return "";
+        }
+        finally
+        {
+            process.Dispose();
+        }
     }
 
     public void Stop()

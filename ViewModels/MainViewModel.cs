@@ -689,9 +689,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             RaiseCommandStates();
             try
             {
-                if (!string.IsNullOrWhiteSpace(result.BootstrapVpn?.VlessUri))
+                var bootstrapProfiles = result.BootstrapVpns
+                    .Where(profile => !string.IsNullOrWhiteSpace(profile.VlessUri))
+                    .ToList();
+                if (bootstrapProfiles.Count == 0 &&
+                    !string.IsNullOrWhiteSpace(result.BootstrapVpn?.VlessUri))
                 {
-                    await StartBootstrapVpnAsync(result.BootstrapVpn, telegramDesktopPath);
+                    bootstrapProfiles.Add(result.BootstrapVpn);
+                }
+
+                if (bootstrapProfiles.Count > 0)
+                {
+                    await StartBootstrapVpnAsync(bootstrapProfiles, telegramDesktopPath);
                 }
 
                 if (!string.IsNullOrWhiteSpace(telegramDesktopPath))
@@ -768,7 +777,32 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         return candidates.FirstOrDefault(File.Exists);
     }
 
-    private async Task StartBootstrapVpnAsync(BootstrapVpnProfile bootstrap, string? telegramDesktopPath)
+    private async Task StartBootstrapVpnAsync(
+        IReadOnlyList<BootstrapVpnProfile> bootstrapProfiles,
+        string? telegramDesktopPath)
+    {
+        List<Exception> failures = [];
+
+        foreach (var bootstrap in bootstrapProfiles)
+        {
+            try
+            {
+                await StartSingleBootstrapVpnAsync(bootstrap, telegramDesktopPath);
+                return;
+            }
+            catch (Exception error)
+            {
+                failures.Add(error);
+                StopBootstrapVpn();
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Временный VPN не смог подключиться к Telegram.",
+            failures.LastOrDefault());
+    }
+
+    private async Task StartSingleBootstrapVpnAsync(BootstrapVpnProfile bootstrap, string? telegramDesktopPath)
     {
         var profiles = _subscriptionService.ParseSubscription(bootstrap.VlessUri);
         if (profiles.Count != 1)
@@ -797,29 +831,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private static async Task VerifyBootstrapVpnAsync()
     {
-        Exception? lastError = null;
-        for (var attempt = 0; attempt < 5; attempt++)
+        try
         {
-            try
+            using var handler = new HttpClientHandler
             {
-                using var handler = new HttpClientHandler
-                {
-                    Proxy = new WebProxy($"http://127.0.0.1:{SystemProxyService.BootstrapPort}"),
-                    UseProxy = true,
-                };
-                using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
-                using var response = await client.GetAsync("https://api.telegram.org/");
-                return;
-            }
-            catch (Exception error)
+                Proxy = new WebProxy($"http://127.0.0.1:{SystemProxyService.BootstrapPort}"),
+                UseProxy = true,
+                AllowAutoRedirect = false,
+            };
+            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+            using var response = await client.GetAsync("http://api.telegram.org/");
+            if ((int)response.StatusCode is < 200 or >= 400)
             {
-                lastError = error;
-                await Task.Delay(TimeSpan.FromSeconds(1));
+                throw new HttpRequestException($"Telegram returned HTTP {(int)response.StatusCode}.");
             }
         }
-
-        throw new InvalidOperationException(
-            $"Временный VPN не смог подключиться к Telegram: {lastError?.Message}");
+        catch (Exception error)
+        {
+            throw new InvalidOperationException(
+                $"Временный VPN не смог подключиться к Telegram: {error.Message}",
+                error);
+        }
     }
     private async Task PollAuthorizationAsync(string sessionId)
     {

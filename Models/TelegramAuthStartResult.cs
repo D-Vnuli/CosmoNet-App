@@ -7,4 +7,5 @@ public sealed class TelegramAuthStartResult
     public string TelegramDeepLink { get; set; } = "";
     public string TelegramWebLink { get; set; } = "";
     public BootstrapVpnProfile? BootstrapVpn { get; set; }
+    public List<BootstrapVpnProfile> BootstrapVpns { get; set; } = [];
 }

@@ -35,7 +35,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public ICommand ToggleMenuCommand { get; }
 
-    public string AppVersion => GetType().Assembly.GetName().Version?.ToString(3) ?? "0.2.8";
+    public string AppVersion => GetType().Assembly.GetName().Version?.ToString(3) ?? "0.2.11";
 
     public bool IsMenuOpen
     {
