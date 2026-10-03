@@ -81,7 +81,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _subscriptionRefreshTimer.Tick += async (_, _) => await RefreshSubscriptionInBackgroundAsync();
 
         RefreshCommand = new RelayCommand(RefreshAsync, () => !IsBusy && !IsConnected);
-        PowerCommand = new RelayCommand(ToggleConnectionAsync);
+        PowerCommand = new RelayCommand(
+            ToggleConnectionAsync,
+            () => !IsBusy && CanUsePowerButton);
         DisconnectCommand = new RelayCommand(DisconnectAsync, () => !IsBusy && IsConnected);
         SaveCommand = new RelayCommand(SaveAsync, () => !IsBusy);
         OpenDataFolderCommand = new RelayCommand(OpenDataFolderAsync);
@@ -288,6 +290,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(PowerButtonColor));
                 OnPropertyChanged(nameof(ConnectionStateText));
                 OnPropertyChanged(nameof(ConnectionStatusTitle));
+                OnPropertyChanged(nameof(CanUsePowerButton));
                 OnPropertyChanged(nameof(ServerStatusText));
                 OnPropertyChanged(nameof(ServerStatusColor));
                 OnPropertyChanged(nameof(CurrentCountryName));
@@ -364,6 +367,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         SubscriptionStatus.ExpiringSoon => "Скоро закончится",
         SubscriptionStatus.Expired => "Истекла",
         SubscriptionStatus.Disabled => "Отключена",
+        SubscriptionStatus.NoSubscription => "Не найдена",
         _ => "Ожидает данные"
     };
 
@@ -419,26 +423,34 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         get
         {
-            if (Subscription.Status == SubscriptionStatus.Disabled)
-            {
-                return SubscriptionStatus.Disabled;
-            }
-
-            if (Subscription.ExpiresAt is null)
-            {
-                return Subscription.Status;
-            }
-
-            var today = DateOnly.FromDateTime(DateTime.Now);
-            var expiresOn = DateOnly.FromDateTime(Subscription.ExpiresAt.Value.ToLocalTime().DateTime);
-            if (today > expiresOn)
-            {
-                return SubscriptionStatus.Expired;
-            }
-
-            return today == expiresOn ? SubscriptionStatus.ExpiringSoon : Subscription.Status;
+            return SubscriptionStateEvaluator.Resolve(Subscription, DateTimeOffset.UtcNow);
         }
     }
+
+    public bool CanUseVpn => SubscriptionStateEvaluator.CanUseVpn(
+        Subscription,
+        DateTimeOffset.UtcNow);
+
+    public bool IsSubscriptionBlocked => SubscriptionStateEvaluator.IsSubscriptionBlocked(
+        Subscription,
+        DateTimeOffset.UtcNow);
+
+    public bool CanUsePowerButton => SubscriptionStateEvaluator.CanUsePowerControl(
+        Subscription,
+        DateTimeOffset.UtcNow,
+        IsConnected);
+
+    public string SubscriptionBlockedMessage => EffectiveSubscriptionStatus switch
+    {
+        SubscriptionStatus.Expired => "Ваша подписка закончилась. VPN недоступен. Чтобы продолжить пользоваться CosmoNet, продлите подписку.",
+        SubscriptionStatus.Disabled => "Ваша подписка отключена. VPN недоступен. Обратитесь в поддержку или продлите подписку.",
+        SubscriptionStatus.NoSubscription => "Подписка не найдена. VPN недоступен. Оформите или продлите подписку в Telegram.",
+        _ => "VPN недоступен. Не удалось подтвердить подписку."
+    };
+
+    public string PowerButtonToolTip => !CanUseVpn
+        ? SubscriptionBlockedMessage
+        : "Подключить или отключить VPN";
     public string ServerStatusText => _isServerAvailable
         ? "Сервер доступен"
         : "Сервер недоступен";
@@ -461,6 +473,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ? "Идет подключение"
         : IsConnected
             ? "VPN активен"
+            : !CanUseVpn
+                ? "VPN недоступен"
             : "VPN выключен";
 
     public string PowerButtonColor => IsBusy
@@ -582,9 +596,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private async Task<SubscriptionLoadResult> LoadSubscriptionWithMetadataAsync()
     {
         var serverSubscription = await TryLoadAuthorizedSubscriptionAsync();
-        if (serverSubscription is null)
+        if (serverSubscription is null
+            || !SubscriptionStateEvaluator.CanApplyRefresh(
+                serverSubscription.Subscription,
+                serverSubscription.SubscriptionUrl))
         {
-            return new SubscriptionLoadResult();
+            throw new InvalidOperationException("Subscription data is unavailable.");
         }
 
         await UpdateSubscriptionUrlAsync(serverSubscription.SubscriptionUrl);
@@ -610,7 +627,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         var secrets = await _secretSettingsStore.LoadAsync();
         if (string.IsNullOrWhiteSpace(secrets.AuthToken))
         {
-            return null;
+            throw new InvalidOperationException("Subscription authorization token is unavailable.");
         }
 
         try
@@ -619,9 +636,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 AuthApiBaseUrl,
                 secrets.AuthToken);
         }
-        catch
+        catch (Exception error)
         {
-            return null;
+            throw new InvalidOperationException("Subscription service is temporarily unavailable.", error);
         }
     }
 
@@ -658,6 +675,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         catch
         {
             // Keep the last successful subscription data visible while the endpoint is unavailable.
+            StatusText = "Не удалось обновить подписку. Используются последние подтвержденные данные.";
         }
         finally
         {
@@ -1053,17 +1071,41 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
+        if (!CanUseVpn)
+        {
+            StatusText = SubscriptionBlockedMessage;
+            return;
+        }
+
         await ConnectAsync();
     }
 
     private async Task ConnectAsync()
     {
+        if (!CanUseVpn)
+        {
+            StatusText = SubscriptionBlockedMessage;
+            return;
+        }
+
         await RunBusyAsync(async () =>
         {
+            if (!CanUseVpn)
+            {
+                StatusText = SubscriptionBlockedMessage;
+                return;
+            }
+
             if (Profiles.Count == 0)
             {
                 StatusText = "Загружаем подписку...";
                 ApplySubscription(await LoadSubscriptionWithMetadataAsync());
+            }
+
+            if (!CanUseVpn)
+            {
+                StatusText = SubscriptionBlockedMessage;
+                return;
             }
 
             var selectedProcesses = GetSelectedProcessNames();
@@ -1523,6 +1565,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(ConnectionStatusTitle));
         OnPropertyChanged(nameof(ConnectionStateText));
         OnPropertyChanged(nameof(PowerButtonColor));
+        OnPropertyChanged(nameof(PowerButtonToolTip));
+        OnPropertyChanged(nameof(CanUseVpn));
+        OnPropertyChanged(nameof(IsSubscriptionBlocked));
+        OnPropertyChanged(nameof(SubscriptionBlockedMessage));
+        OnPropertyChanged(nameof(CanUsePowerButton));
         OnPropertyChanged(nameof(TrafficModeText));
         OnPropertyChanged(nameof(SelectedApplicationsText));
         RefreshSubscriptionStatus();
@@ -1531,6 +1578,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private void RefreshSubscriptionStatus()
     {
         OnPropertyChanged(nameof(Subscription));
+        OnPropertyChanged(nameof(CanUseVpn));
+        OnPropertyChanged(nameof(IsSubscriptionBlocked));
+        OnPropertyChanged(nameof(SubscriptionBlockedMessage));
+        OnPropertyChanged(nameof(CanUsePowerButton));
+        OnPropertyChanged(nameof(PowerButtonToolTip));
+        OnPropertyChanged(nameof(ConnectionStateText));
+        RaiseCommandStates();
         OnPropertyChanged(nameof(AccountDisplayText));
         OnPropertyChanged(nameof(SubscriptionExpiresText));
         OnPropertyChanged(nameof(SubscriptionStatusText));
@@ -1569,6 +1623,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private void RaiseCommandStates()
     {
         ((RelayCommand)RefreshCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)PowerCommand).RaiseCanExecuteChanged();
         ((RelayCommand)DisconnectCommand).RaiseCanExecuteChanged();
         ((RelayCommand)SaveCommand).RaiseCanExecuteChanged();
         ((RelayCommand)BrowseApplicationCommand).RaiseCanExecuteChanged();

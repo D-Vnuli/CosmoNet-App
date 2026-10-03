@@ -101,6 +101,12 @@
                             <Path x:Name="RingInnerNear" Data="M26,95 C26,116 184,116 184,95 L180,95 C180,112 30,112 30,95 Z" Fill="#7E8BA2" Opacity="0.72" />
                             <Path x:Name="RingMotionFront" Data="M8,96 C20,128 191,128 202,88" Stroke="#F5DEC0" StrokeThickness="1.2" StrokeDashArray="1 10" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Opacity="0.22" />
                         </Canvas>
+                        <Grid x:Name="SubscriptionBlockedProhibition" Width="154" Height="154" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False">
+                            <Ellipse Margin="8" Stroke="#F15A64" StrokeThickness="9" Opacity="0.96">
+                                <Ellipse.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="0" Color="#FF5360" Opacity="0.62" /></Ellipse.Effect>
+                            </Ellipse>
+                            <Path Data="M35,119 L119,35" Stroke="#F15A64" StrokeThickness="11" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Grid>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Atmosphere" Property="Stroke" Value="#FFE6C5" /><Setter TargetName="Glow" Property="Opacity" Value="0.84" /></Trigger>
@@ -113,6 +119,13 @@
                             <Setter TargetName="Glow" Property="Fill" Value="#8650E6B9" /><Setter TargetName="Glow" Property="Opacity" Value="1" /><Setter TargetName="PlanetSurface" Property="Fill"><Setter.Value><RadialGradientBrush GradientOrigin="0.24,0.16" Center="0.5,0.5" RadiusX="0.76" RadiusY="0.76"><GradientStop Color="#D8C3A5" Offset="0" /><GradientStop Color="#A88162" Offset="0.4" /><GradientStop Color="#684B4B" Offset="0.7" /><GradientStop Color="#263047" Offset="1" /></RadialGradientBrush></Setter.Value></Setter><Setter TargetName="PlanetBandOne" Property="Fill" Value="#855A49" /><Setter TargetName="PlanetBandTwo" Property="Fill" Value="#E0C5A2" /><Setter TargetName="PlanetBandThree" Property="Fill" Value="#4E3746" /><Setter TargetName="Atmosphere" Property="Stroke" Value="#8FFFE0" /><Setter TargetName="Atmosphere" Property="StrokeThickness" Value="2.3" /><Setter TargetName="RingOuter" Property="Stroke" Value="#25D7A8" /><Setter TargetName="RingMain" Property="Stroke" Value="#9DFFE2" /><Setter TargetName="RingInner" Property="Stroke" Value="#53E8C0" /><Setter TargetName="RingOuterNear" Property="Fill" Value="#25D7A8" /><Setter TargetName="RingMainNear" Property="Fill" Value="#9DFFE2" /><Setter TargetName="RingInnerNear" Property="Fill" Value="#53E8C0" /><Setter TargetName="RingMotionBack" Property="Opacity" Value="0.7" /><Setter TargetName="RingMotionFront" Property="Opacity" Value="0.78" />
                             <DataTrigger.EnterActions><BeginStoryboard x:Name="SaturnConnectedAnimation"><Storyboard RepeatBehavior="Forever"><DoubleAnimation Storyboard.TargetName="RingMotionBack" Storyboard.TargetProperty="StrokeDashOffset" From="0" To="-38" Duration="0:0:3.6" /><DoubleAnimation Storyboard.TargetName="RingMotionFront" Storyboard.TargetProperty="StrokeDashOffset" From="0" To="-38" Duration="0:0:3.6" /><DoubleAnimation Storyboard.TargetName="GlowEffect" Storyboard.TargetProperty="BlurRadius" From="24" To="34" Duration="0:0:2.2" AutoReverse="True" /></Storyboard></BeginStoryboard></DataTrigger.EnterActions>
                             <DataTrigger.ExitActions><StopStoryboard BeginStoryboardName="SaturnConnectedAnimation" /></DataTrigger.ExitActions>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsSubscriptionBlocked}" Value="True">
+                            <Setter TargetName="SubscriptionBlockedProhibition" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="Glow" Property="Fill" Value="#764A1829" />
+                            <Setter TargetName="Glow" Property="Opacity" Value="0.9" />
+                            <Setter TargetName="Atmosphere" Property="Stroke" Value="#F15A64" />
+                            <Setter TargetName="Atmosphere" Property="StrokeThickness" Value="2.2" />
                         </DataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -229,7 +242,10 @@
                         </Grid.RowDefinitions>
                         <Canvas x:Name="StarfieldCanvas" Grid.RowSpan="2" IsHitTestVisible="False" ClipToBounds="True" />
                         <StackPanel Grid.Row="0" Width="348" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Button Style="{StaticResource PowerButton}" Command="{Binding PowerCommand}" ToolTip="Подключить или отключить VPN" AutomationProperties.Name="Подключить или отключить VPN" HorizontalAlignment="Center" />
+                            <Button Style="{StaticResource PowerButton}" Command="{Binding PowerCommand}" ToolTip="{Binding PowerButtonToolTip}" IsEnabled="{Binding CanUsePowerButton}" AutomationProperties.Name="Подключить или отключить VPN" HorizontalAlignment="Center" />
+                            <Border Visibility="{Binding IsSubscriptionBlocked, Converter={StaticResource BooleanToVisibilityConverter}}" Width="348" Margin="0,14,0,0" Padding="15,12" Background="#D9241830" BorderBrush="#DFF15A64" BorderThickness="1" CornerRadius="14">
+                                <TextBlock Text="{Binding SubscriptionBlockedMessage}" Foreground="White" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="18" />
+                            </Border>
                             <TextBlock Text="{Binding ConnectionStateText}" Foreground="White" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,24,0,0" />
 
                             <!-- The information rows are measured by their real content width.

@@ -1,5 +1,5 @@
 #define MyAppName "CosmoNet"
-#define MyAppVersion "0.2.11"
+#define MyAppVersion "0.2.15"
 #define MyAppPublisher "CosmoNet"
 #define MyAppExeName "CosmoNet.App.exe"
 
@@ -12,7 +12,7 @@ DefaultDirName={autopf}\CosmoNet
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\artifacts
-OutputBaseFilename=CosmoNet-Setup-0.2.11
+OutputBaseFilename=CosmoNet-Setup-0.2.15
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

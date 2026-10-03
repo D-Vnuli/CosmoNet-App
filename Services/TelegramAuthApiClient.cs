@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using CosmoNet.App.Models;
 
 namespace CosmoNet.App.Services;
@@ -33,8 +34,27 @@ public sealed class TelegramAuthApiClient
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await _httpClient.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<AppSubscriptionResult>(cancellationToken: ct)
+        var payload = await response.Content.ReadAsStringAsync(ct);
+        using var document = JsonDocument.Parse(payload);
+        if (!document.RootElement.TryGetProperty("subscription", out var subscription)
+            || subscription.ValueKind != JsonValueKind.Object
+            || !subscription.TryGetProperty("status", out var status)
+            || status.ValueKind != JsonValueKind.Number)
+        {
+            throw new InvalidOperationException("Incomplete subscription response.");
+        }
+
+        var result = JsonSerializer.Deserialize<AppSubscriptionResult>(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web))
             ?? throw new InvalidOperationException("Empty subscription response.");
+
+        // Production API status 0 is a confirmed "subscription not found" response.
+        // Do not confuse it with an absent/malformed status, rejected above.
+        if (result.Subscription.Status == SubscriptionStatus.Unknown)
+        {
+            result.Subscription.Status = SubscriptionStatus.NoSubscription;
+        }
+
+        return result;
     }
 
     public async Task<YooKassaPaymentResult> CreateYooKassaPaymentAsync(

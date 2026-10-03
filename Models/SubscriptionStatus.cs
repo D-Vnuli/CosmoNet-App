@@ -6,5 +6,6 @@ public enum SubscriptionStatus
     Active,
     ExpiringSoon,
     Expired,
-    Disabled
+    Disabled,
+    NoSubscription
 }
