@@ -14,7 +14,7 @@ public partial class App : System.Windows.Application
         _singleInstanceMutex = new Mutex(true, @"Local\CosmoNet.App.SingleInstance", out isFirstInstance);
         if (!isFirstInstance)
         {
-            System.Windows.MessageBox.Show("CosmoNet уже запущен.", "CosmoNet", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show("CosmoNet VPN уже запущен.", "CosmoNet VPN", MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
         }

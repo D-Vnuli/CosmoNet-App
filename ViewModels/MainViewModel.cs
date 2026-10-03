@@ -21,6 +21,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly SettingsStore _settingsStore = new();
     private readonly SubscriptionService _subscriptionService = new();
     private readonly TelegramAuthApiClient _telegramAuthApiClient = new();
+    private readonly WindowsReleaseService _windowsReleaseService = new();
+    private readonly TelegramLinkLauncher _telegramLinkLauncher = new();
+    private readonly WindowsUpdateCheckGate _windowsUpdateCheckGate = new();
+    private readonly WindowsUpdateState _windowsUpdateState = new();
+    private readonly CancellationTokenSource _windowsUpdateCancellation = new();
     private readonly FeedbackApiClient _feedbackApiClient = new();
     private readonly SecretSettingsStore _secretSettingsStore = new();
     private readonly SingBoxConfigBuilder _configBuilder = new();
@@ -28,10 +33,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly SystemProxyService _systemProxyService = new();
     private readonly MihomoConfigBuilder _mihomoConfigBuilder = new();
     private readonly MihomoService _mihomoService = new();
-    private readonly TunDnsService _tunDnsService = new();
+    private readonly MihomoConfigFileStore _mihomoConfigFileStore = new();
+    private readonly IVpnConnectivityVerifier _vpnConnectivityVerifier = new VpnConnectivityVerifier();
+    private readonly VpnConnectionLifecycle _vpnConnectionLifecycle = new();
     private readonly ApplicationIconService _applicationIconService = new();
     private readonly DispatcherTimer _serverAvailabilityTimer;
     private readonly DispatcherTimer _subscriptionRefreshTimer;
+    private readonly DispatcherTimer _windowsUpdateTimer;
     private readonly VpnLogService _vpnLogService = new();
 
     private const string DefaultProbeHost = "45.151.69.119";
@@ -44,11 +52,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private string _authStatus = "Войдите через Telegram, чтобы приложение могло получить вашу подписку.";
     private string _authSessionId = "";
     private string _diagnosticText = "Диагностика еще не запускалась.";
-    private string _lastConfigPath = AppPaths.GeneratedConfigPath;
+    private string _lastConfigPath = AppPaths.MihomoConfigPath;
     private AccountSession _accountSession = new();
     private bool _isAuthMenuOpen;
     private bool _isBusy;
     private bool _isConnected;
+    private VpnConnectionPhase _connectionPhase = VpnConnectionPhase.Disconnected;
     private bool _isServerAvailable;
     private bool _isCheckingServerAvailability;
     private bool _isRefreshingSubscription;
@@ -71,6 +80,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         AvailableApplications.CollectionChanged += OnAvailableApplicationsChanged;
         _systemProxyService.Restore();
         _vpnLogService.LogReceived += OnLogReceived;
+        _mihomoService.UnexpectedExit += OnMihomoUnexpectedExit;
 
         _serverAvailabilityTimer = new DispatcherTimer
         {
@@ -79,6 +89,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _serverAvailabilityTimer.Tick += async (_, _) => { await RefreshServerAvailabilityAsync(); RefreshSubscriptionStatus(); };
         _subscriptionRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         _subscriptionRefreshTimer.Tick += async (_, _) => await RefreshSubscriptionInBackgroundAsync();
+        _windowsUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
+        _windowsUpdateTimer.Tick += async (_, _) => await CheckForWindowsUpdateAsync();
 
         RefreshCommand = new RelayCommand(RefreshAsync, () => !IsBusy && !IsConnected);
         PowerCommand = new RelayCommand(
@@ -91,6 +103,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ShowAuthMethodsCommand = new RelayCommand(ShowAuthMethods, () => !IsBusy && !AccountSession.IsAuthorized);
         LoginCommand = new RelayCommand(LoginAsync, () => !IsBusy && !AccountSession.IsAuthorized && string.IsNullOrEmpty(_authSessionId));
         LogoutCommand = new RelayCommand(LogoutAsync, () => !IsBusy && AccountSession.IsAuthorized);
+        OpenWindowsUpdateCommand = new RelayCommand(OpenWindowsUpdateAsync, () => IsWindowsUpdateAvailable);
         RunDiagnosticsCommand = new RelayCommand(RunDiagnosticsAsync, () => !IsBusy);
         EnableLogsCommand = new RelayCommand(EnableLogsAsync, () => !IsLogMonitoring);
         DisableLogsCommand = new RelayCommand(DisableLogsAsync, () => IsLogMonitoring);
@@ -115,6 +128,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand ShowAuthMethodsCommand { get; }
     public ICommand LoginCommand { get; }
     public ICommand LogoutCommand { get; }
+    public ICommand OpenWindowsUpdateCommand { get; }
     public ICommand RunDiagnosticsCommand { get; }
     public ICommand EnableLogsCommand { get; }
     public ICommand DisableLogsCommand { get; }
@@ -240,6 +254,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (SetField(ref _accountSession, value))
             {
+                if (!value.IsAuthorized)
+                {
+                    SetAvailableWindowsUpdate(null);
+                }
                 RefreshSubscriptionStatus();
                 OnPropertyChanged(nameof(AccountButtonText));
                 OnPropertyChanged(nameof(IsAuthorized));
@@ -253,6 +271,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ? (string.IsNullOrWhiteSpace(AccountSession.DisplayName) ? "CosmoNet" : AccountSession.DisplayName)
         : "Вход";
     public bool IsAuthorized => AccountSession.IsAuthorized;
+    public bool IsWindowsUpdateAvailable => _windowsUpdateState.IsUpdateAvailable;
     public bool IsAuthMenuOpen
     {
         get => _isAuthMenuOpen;
@@ -296,6 +315,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CurrentCountryName));
                 OnPropertyChanged(nameof(CurrentCountryFlag));
                 OnPropertyChanged(nameof(CurrentCountryCode));
+            }
+        }
+    }
+
+    public VpnConnectionPhase ConnectionPhase
+    {
+        get => _connectionPhase;
+        private set
+        {
+            if (SetField(ref _connectionPhase, value))
+            {
+                OnPropertyChanged(nameof(ConnectionStateText));
+                OnPropertyChanged(nameof(PowerButtonColor));
             }
         }
     }
@@ -469,10 +501,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public string ConnectionStatusTitle => IsConnected ? "Подключено" : "Не подключено";
 
-    public string ConnectionStateText => IsBusy
+    public string ConnectionStateText => ConnectionPhase == VpnConnectionPhase.Verifying
+        ? "Проверяем VPN-соединение"
+        : IsBusy
         ? "Идет подключение"
         : IsConnected
             ? "VPN активен"
+            : ConnectionPhase == VpnConnectionPhase.Error
+                ? "Ошибка подключения"
             : !CanUseVpn
                 ? "VPN недоступен"
             : "VPN выключен";
@@ -493,6 +529,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public async Task InitializeAsync()
     {
+        CleanupMihomoConfig();
         var settings = await _settingsStore.LoadAsync();
         var secrets = await _secretSettingsStore.LoadAsync();
         SubscriptionUrl = string.IsNullOrWhiteSpace(settings.SubscriptionUrl) ? secrets.SubscriptionUrl : settings.SubscriptionUrl;
@@ -520,12 +557,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         await RefreshSubscriptionInBackgroundAsync();
         _serverAvailabilityTimer.Start();
         _subscriptionRefreshTimer.Start();
+        _windowsUpdateTimer.Start();
+        _ = CheckForWindowsUpdateAsync();
     }
 
     public void Dispose()
     {
+        _mihomoService.UnexpectedExit -= OnMihomoUnexpectedExit;
+        _vpnConnectionLifecycle.BeginDisconnect();
+        ConnectionPhase = _vpnConnectionLifecycle.Phase;
+        _mihomoService.Stop();
+        CleanupMihomoConfig();
+        IsConnected = false;
+        _vpnConnectionLifecycle.MarkDisconnected();
+        ConnectionPhase = _vpnConnectionLifecycle.Phase;
         StopBootstrapVpn();
         _serverAvailabilityTimer.Stop();
+        _subscriptionRefreshTimer.Stop();
+        _windowsUpdateTimer.Stop();
+        _windowsUpdateCancellation.Cancel();
+        _windowsUpdateCancellation.Dispose();
         _vpnLogService.LogReceived -= OnLogReceived;
         _vpnLogService.Dispose();
         _systemProxyService.Restore();
@@ -907,6 +958,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 _authSessionId = "";
                 await SaveAsync(setStatus: false);
                 StopBootstrapVpn();
+                _ = CheckForWindowsUpdateAsync();
                 return;
             }
             catch
@@ -974,6 +1026,57 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             SubscriptionUrl = ""; ReplaceProfiles([]); AccountSession = new AccountSession();
             await SaveAsync(setStatus: false);
         });
+    }
+
+    private async Task CheckForWindowsUpdateAsync()
+    {
+        if (!AccountSession.IsAuthorized)
+        {
+            return;
+        }
+
+        var currentVersion = GetType().Assembly.GetName().Version;
+        if (currentVersion is null || !_windowsUpdateCheckGate.TryEnter())
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await _windowsReleaseService.CheckForUpdateAsync(
+                AuthApiBaseUrl,
+                currentVersion,
+                _windowsUpdateCancellation.Token);
+            if (_windowsUpdateState.ApplyVerifiedResult(result))
+            {
+                OnPropertyChanged(nameof(IsWindowsUpdateAvailable));
+                ((RelayCommand)OpenWindowsUpdateCommand).RaiseCanExecuteChanged();
+            }
+        }
+        finally
+        {
+            _windowsUpdateCheckGate.Exit();
+        }
+    }
+
+    private Task OpenWindowsUpdateAsync()
+    {
+        if (_windowsUpdateState.AvailableUpdate is not null)
+        {
+            _telegramLinkLauncher.TryOpen(_windowsUpdateState.AvailableUpdate);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void SetAvailableWindowsUpdate(WindowsReleaseInfo? update)
+    {
+        if (!_windowsUpdateState.SetVerifiedUpdate(update))
+        {
+            return;
+        }
+        OnPropertyChanged(nameof(IsWindowsUpdateAvailable));
+        ((RelayCommand)OpenWindowsUpdateCommand).RaiseCanExecuteChanged();
     }
 
     private bool CanSubmitFeedback()
@@ -1108,34 +1211,75 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 return;
             }
 
+            _vpnConnectionLifecycle.BeginConnection();
+            ConnectionPhase = _vpnConnectionLifecycle.Phase;
+
             var selectedProcesses = GetSelectedProcessNames();
             var selectedProcessPaths = GetSelectedApplicationPaths().Values.ToArray();
             AppendDiagnosticLog($"Запуск Mihomo. Профили: {GetProfileTypes()}.");
             StatusText = "Готовим конфигурацию...";
-            var configPath = await _mihomoConfigBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses, selectedProcessPaths);
-            LastConfigPath = configPath;
-            StatusText = "Проверяем конфигурацию Mihomo...";
-            using var configLock = _mihomoService.LockConfigForExecution(configPath);
-            var diagnostic = await _mihomoService.CheckConfigAsync(configPath);
-            ApplyDiagnosticResult(diagnostic);
-            if (!diagnostic.Success)
+            try
             {
-                AppendDiagnosticLog("Ошибка проверки конфигурации Mihomo. Код: CONFIG_CHECK_FAILED.");
-                throw new InvalidOperationException(diagnostic.Message);
-            }
+                var configPath = await _mihomoConfigBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses, selectedProcessPaths);
+                LastConfigPath = configPath;
+                StatusText = "Проверяем конфигурацию Mihomo...";
+                using (var configLock = _mihomoService.LockConfigForExecution(configPath))
+                {
+                    var diagnostic = await _mihomoService.CheckConfigAsync(configPath);
+                    ApplyDiagnosticResult(diagnostic);
+                    if (!diagnostic.Success)
+                    {
+                        AppendDiagnosticLog("Ошибка проверки конфигурации Mihomo. Код: CONFIG_CHECK_FAILED.");
+                        throw new InvalidOperationException(diagnostic.Message);
+                    }
 
-            await _mihomoService.StartAsync(configPath, useTunMode: true);
-            _systemProxyService.Restore();
-            AppendDiagnosticLog("Mihomo запущен. Подключение успешно.");
-            IsConnected = true;
-            await RefreshServerAvailabilityAsync();
-            LastRefresh ??= DateTimeOffset.Now;
-            await SaveAsync(setStatus: false);
-            StatusText = TrafficMode == TrafficMode.AllTraffic
-                ? "Подключено: весь трафик идет через VPN"
-                : $"Подключено: приложений через VPN {selectedProcesses.Count}";
-            RefreshDerivedStatus();
+                    await _mihomoService.StartAsync(configPath, useTunMode: true);
+                }
+
+                _systemProxyService.Restore();
+                _vpnConnectionLifecycle.BeginVerification();
+                ConnectionPhase = _vpnConnectionLifecycle.Phase;
+                StatusText = "Проверяем VPN-соединение...";
+                try
+                {
+                    await _vpnConnectivityVerifier.VerifyAsync();
+                    if (!_vpnConnectionLifecycle.TryMarkConnected(_mihomoService.IsRunning, connectivityVerified: true))
+                    {
+                        throw new InvalidOperationException("Mihomo завершился до подтверждения VPN-соединения.");
+                    }
+                }
+                catch (Exception error)
+                {
+                    throw new InvalidOperationException("VPN-соединение не подтверждено. Попробуйте подключиться снова.", error);
+                }
+
+                ConnectionPhase = _vpnConnectionLifecycle.Phase;
+                AppendDiagnosticLog("Mihomo запущен и VPN-соединение подтверждено.");
+                IsConnected = true;
+                await RefreshServerAvailabilityAsync();
+                LastRefresh ??= DateTimeOffset.Now;
+                await SaveAsync(setStatus: false);
+                StatusText = TrafficMode == TrafficMode.AllTraffic
+                    ? "Подключено: весь трафик идет через VPN"
+                    : $"Подключено: приложений через VPN {selectedProcesses.Count}";
+                RefreshDerivedStatus();
+            }
+            catch
+            {
+                _mihomoService.Stop();
+                CleanupMihomoConfig();
+                _vpnConnectionLifecycle.MarkError();
+                ConnectionPhase = _vpnConnectionLifecycle.Phase;
+                IsConnected = false;
+                throw;
+            }
         });
+
+        if (!IsConnected && ConnectionPhase is VpnConnectionPhase.Connecting or VpnConnectionPhase.Verifying)
+        {
+            _vpnConnectionLifecycle.MarkError();
+            ConnectionPhase = _vpnConnectionLifecycle.Phase;
+        }
     }
 
     private Task DisconnectAsync()
@@ -1146,14 +1290,44 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             StatusText = "Временный VPN отключён.";
             return Task.CompletedTask;
         }
+        _vpnConnectionLifecycle.BeginDisconnect();
+        ConnectionPhase = _vpnConnectionLifecycle.Phase;
         AppendDiagnosticLog("Остановка процесса Mihomo.");
         _systemProxyService.Restore();
         _mihomoService.Stop();
+        CleanupMihomoConfig();
         IsConnected = false;
+        _vpnConnectionLifecycle.MarkDisconnected();
+        ConnectionPhase = _vpnConnectionLifecycle.Phase;
         StatusText = "Отключено";
         _ = RefreshServerAvailabilityAsync();
         RefreshDerivedStatus();
         return Task.CompletedTask;
+    }
+
+    private void OnMihomoUnexpectedExit(object? sender, MihomoExitedEventArgs eventArgs)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(() =>
+        {
+            if (!_vpnConnectionLifecycle.TryHandleUnexpectedExit())
+            {
+                return;
+            }
+
+            ConnectionPhase = _vpnConnectionLifecycle.Phase;
+            IsConnected = false;
+            _systemProxyService.Restore();
+            CleanupMihomoConfig();
+            StatusText = "VPN-соединение прервано. Подключитесь снова.";
+            AppendDiagnosticLog($"Mihomo неожиданно завершился. Код: {eventArgs.ExitCode}.");
+            RefreshDerivedStatus();
+        });
     }
 
     private async Task RunDiagnosticsAsync()
@@ -1170,13 +1344,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             var selectedProcesses = GetSelectedProcessNames();
             var selectedProcessPaths = GetSelectedApplicationPaths().Values.ToArray();
             StatusText = "Генерируем и проверяем конфигурацию Mihomo...";
-            var configPath = await _mihomoConfigBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses, selectedProcessPaths);
-            LastConfigPath = configPath;
-            using var configLock = _mihomoService.LockConfigForExecution(configPath);
-            var diagnostic = await _mihomoService.CheckConfigAsync(configPath);
-            ApplyDiagnosticResult(diagnostic);
-            StatusText = diagnostic.Message;
+            try
+            {
+                var configPath = await _mihomoConfigBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses, selectedProcessPaths);
+                LastConfigPath = configPath;
+                using (var configLock = _mihomoService.LockConfigForExecution(configPath))
+                {
+                    var diagnostic = await _mihomoService.CheckConfigAsync(configPath);
+                    ApplyDiagnosticResult(diagnostic);
+                    StatusText = diagnostic.Message;
+                }
+            }
+            finally
+            {
+                if (!IsConnected)
+                {
+                    CleanupMihomoConfig();
+                }
+            }
         });
+    }
+
+    private void CleanupMihomoConfig()
+    {
+        if (!_mihomoConfigFileStore.TryDelete())
+        {
+            AppendDiagnosticLog("Не удалось удалить временный конфиг Mihomo.");
+        }
     }
 
     private async Task BrowseApplicationAsync()

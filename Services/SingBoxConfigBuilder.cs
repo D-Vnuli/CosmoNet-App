@@ -1,4 +1,3 @@
-using System.Net.NetworkInformation;
 using System.Text.Json;
 using CosmoNet.App.Models;
 
@@ -10,79 +9,6 @@ public sealed class SingBoxConfigBuilder
     {
         WriteIndented = true
     };
-
-    public async Task<string> WriteConfigAsync(
-        IReadOnlyList<VpnProfile> profiles,
-        TrafficMode trafficMode,
-        IReadOnlyList<string> selectedProcessNames,
-        IReadOnlyCollection<string>? selectedProcessPaths = null,
-        CancellationToken cancellationToken = default,
-        string? outputPath = null)
-    {
-        if (profiles.Count == 0)
-        {
-            throw new InvalidOperationException("Сначала обновите подписку.");
-        }
-
-        if (trafficMode == TrafficMode.SelectedApps && selectedProcessNames.Count == 0)
-        {
-            throw new InvalidOperationException("Выберите приложения, которые должны работать через VPN.");
-        }
-
-        AppPaths.EnsureDataDirectory();
-
-        var orderedProfiles = profiles
-            .OrderBy(profile => profile.ConnectionPriority)
-            .ThenBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(profile => profile.Server, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var physicalInterface = FindPhysicalInterfaceName();
-        var profileOutbounds = orderedProfiles
-            .Select((profile, index) => BuildOutbound(profile, index, physicalInterface))
-            .ToList<object>();
-
-        var profileTags = Enumerable.Range(0, profileOutbounds.Count)
-            .Select(index => $"profile-{index}")
-            .ToArray();
-
-        var outbounds = profileOutbounds;
-
-        outbounds.Add(new Dictionary<string, object?>
-        {
-            ["type"] = "urltest",
-            ["tag"] = "cosmonet-auto",
-            ["outbounds"] = profileTags,
-            ["url"] = "https://www.gstatic.com/generate_204",
-            ["interval"] = "1m",
-            ["tolerance"] = 100,
-            ["interrupt_exist_connections"] = false
-        });
-
-        outbounds.Add(BuildDirectOutbound(physicalInterface));
-        outbounds.Add(new Dictionary<string, object?> { ["type"] = "block", ["tag"] = "block" });
-
-        var config = new Dictionary<string, object?>
-        {
-            ["log"] = new Dictionary<string, object?>
-            {
-                ["level"] = "warn",
-                ["timestamp"] = true,
-                ["output"] = AppPaths.SingBoxLogPath
-            },
-            ["dns"] = BuildDns(),
-            ["inbounds"] = new object[] { BuildTunInbound(orderedProfiles), BuildVpnProxyInbound() },
-            ["outbounds"] = outbounds,
-            ["route"] = BuildRoute(trafficMode, selectedProcessNames, selectedProcessPaths)
-        };
-
-        var configPath = string.IsNullOrWhiteSpace(outputPath)
-            ? AppPaths.GeneratedConfigPath
-            : outputPath;
-        await using var stream = File.Create(configPath);
-        await JsonSerializer.SerializeAsync(stream, config, JsonOptions, cancellationToken);
-        return configPath;
-    }
 
     public async Task<string> WriteBootstrapConfigAsync(
         VpnProfile profile,
@@ -266,95 +192,7 @@ public sealed class SingBoxConfigBuilder
         return inbound;
     }
 
-    private static Dictionary<string, object?> BuildVpnProxyInbound() => new()
-    {
-        ["type"] = "mixed",
-        ["tag"] = "vpn-proxy",
-        ["listen"] = "127.0.0.1",
-        ["listen_port"] = SystemProxyService.VpnPort,
-    };
-    private static Dictionary<string, object?> BuildRoute(
-        TrafficMode trafficMode,
-        IReadOnlyList<string> selectedProcessNames,
-        IReadOnlyCollection<string>? selectedProcessPaths)
-    {
-        var route = new Dictionary<string, object?>
-        {
-            ["auto_detect_interface"] = true,
-            ["default_domain_resolver"] = "cloudflare",
-            ["final"] = trafficMode == TrafficMode.AllTraffic ? "cosmonet-auto" : "direct"
-        };
-
-        var rules = new List<object>
-        {
-            new Dictionary<string, object?>
-            {
-                ["inbound"] = new[] { "vpn-proxy" },
-                ["outbound"] = "cosmonet-auto"
-            },
-            new Dictionary<string, object?>
-            {
-                ["protocol"] = "dns",
-                ["action"] = "hijack-dns"
-            }
-        };
-
-        if (trafficMode == TrafficMode.SelectedApps)
-        {
-            foreach (var processPath in selectedProcessPaths ?? Array.Empty<string>())
-            {
-                if (!string.IsNullOrWhiteSpace(processPath))
-                {
-                    rules.Add(new Dictionary<string, object?>
-                    {
-                        ["inbound"] = new[] { "tun-in" },
-                        ["process_path"] = processPath,
-                        ["outbound"] = "cosmonet-auto"
-                    });
-                }
-            }
-
-            rules.Add(
-                new Dictionary<string, object?>
-                {
-                    ["inbound"] = new[] { "tun-in" },
-                    ["process_name"] = selectedProcessNames
-                        .Where(name => !string.IsNullOrWhiteSpace(name))
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                        .ToArray(),
-                    ["outbound"] = "cosmonet-auto"
-                });
-        }
-
-        route["rules"] = rules;
-
-        return route;
-    }
-
-    private static string? FindPhysicalInterfaceName()
-    {
-        return NetworkInterface.GetAllNetworkInterfaces()
-            .Where(network => network.OperationalStatus == OperationalStatus.Up)
-            .Where(network => !string.Equals(network.Description, "sing-tun Tunnel", StringComparison.OrdinalIgnoreCase))
-            .Where(network => network.GetIPProperties().GatewayAddresses.Any(gateway =>
-                gateway.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))
-            .Select(network => network.Name)
-            .FirstOrDefault();
-    }
-
-    private static Dictionary<string, object?> BuildDirectOutbound(string? physicalInterface)
-    {
-        var outbound = new Dictionary<string, object?> { ["type"] = "direct", ["tag"] = "direct" };
-        if (!string.IsNullOrWhiteSpace(physicalInterface))
-        {
-            outbound["bind_interface"] = physicalInterface;
-        }
-
-        return outbound;
-    }
-
-    private static Dictionary<string, object?> BuildOutbound(VpnProfile profile, int index, string? physicalInterface = null)
+    private static Dictionary<string, object?> BuildOutbound(VpnProfile profile, int index)
     {
         var outbound = new Dictionary<string, object?>
         {
@@ -364,11 +202,6 @@ public sealed class SingBoxConfigBuilder
             ["server_port"] = profile.Port,
             ["uuid"] = profile.Uuid
         };
-
-        if (!string.IsNullOrWhiteSpace(physicalInterface))
-        {
-            outbound["bind_interface"] = physicalInterface;
-        }
 
         var flow = profile.Query.GetValueOrDefault("flow", "");
         if (string.IsNullOrWhiteSpace(flow) &&

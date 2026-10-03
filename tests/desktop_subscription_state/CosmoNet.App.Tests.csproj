@@ -1,13 +1,25 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
     <Compile Include="..\..\Models\SubscriptionStatus.cs" Link="SubscriptionStatus.cs" />
     <Compile Include="..\..\Models\SubscriptionSummary.cs" Link="SubscriptionSummary.cs" />
     <Compile Include="..\..\Models\SubscriptionStateEvaluator.cs" Link="SubscriptionStateEvaluator.cs" />
+    <Compile Include="..\..\Models\AccountSession.cs" Link="AccountSession.cs" />
+    <Compile Include="..\..\Models\AppSettings.cs" Link="AppSettings.cs" />
+    <Compile Include="..\..\Models\TrafficMode.cs" Link="TrafficMode.cs" />
+    <Compile Include="..\..\Models\VpnConnectionPhase.cs" Link="VpnConnectionPhase.cs" />
+    <Compile Include="..\..\Models\SecretSettings.cs" Link="SecretSettings.cs" />
+    <Compile Include="..\..\Services\AppPaths.cs" Link="AppPaths.cs" />
+    <Compile Include="..\..\Services\SecretSettingsStore.cs" Link="SecretSettingsStore.cs" />
+    <Compile Include="..\..\Services\MihomoConfigFileStore.cs" Link="MihomoConfigFileStore.cs" />
+    <Compile Include="..\..\Services\SecurityPolicy.cs" Link="SecurityPolicy.cs" />
+    <Compile Include="..\..\Services\WindowsReleaseService.cs" Link="WindowsReleaseService.cs" />
+    <Compile Include="..\..\Models\WindowsReleaseInfo.cs" Link="WindowsReleaseInfo.cs" />
   </ItemGroup>
 </Project>

@@ -1,7 +1,10 @@
 #define MyAppName "CosmoNet"
-#define MyAppVersion "0.2.15"
+#define MyAppVersion "0.2.25"
 #define MyAppPublisher "CosmoNet"
 #define MyAppExeName "CosmoNet.App.exe"
+#ifndef MyPublishDir
+  #define MyPublishDir "..\artifacts\publish"
+#endif
 
 [Setup]
 AppId={{4B4775E3-6CB4-49F5-A22B-4D638EF9E8D4}
@@ -12,7 +15,7 @@ DefaultDirName={autopf}\CosmoNet
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\artifacts
-OutputBaseFilename=CosmoNet-Setup-0.2.15
+OutputBaseFilename=CosmoNet-Setup-0.2.25
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -28,7 +31,7 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "desktopicon"; Description: "Создать значок на рабочем столе"; GroupDescription: "Дополнительные значки:"
 
 [Files]
-Source: "..\artifacts\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyPublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\CosmoNet"; Filename: "{app}\{#MyAppExeName}"

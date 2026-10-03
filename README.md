@@ -68,7 +68,7 @@ dotnet build .\CosmoNet.App.sln
 ### Запуск
 
 ```powershell
-.\bin\Debug\net9.0-windows\CosmoNet.App.exe
+.\bin\Debug\net10.0-windows\CosmoNet.App.exe
 ```
 
 Для разработки можно запустить проект напрямую:

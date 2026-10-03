@@ -7,14 +7,28 @@ using CosmoNet.App.Models;
 
 namespace CosmoNet.App.Services;
 
-public sealed class MihomoService
+public sealed class MihomoService : IDisposable
 {
     private const int MixedProxyPort = 20809;
     private static readonly TimeSpan CoreStartTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ProcessStartTimeout = TimeSpan.FromSeconds(8);
+    private readonly object _processLock = new();
     private Process? _process;
+    private MihomoProcessJob? _processJob;
+    private bool _stopRequested;
 
-    public bool IsRunning => _process is { HasExited: false };
+    public event EventHandler<MihomoExitedEventArgs>? UnexpectedExit;
+
+    public bool IsRunning
+    {
+        get
+        {
+            lock (_processLock)
+            {
+                return _process is not null && !HasExited(_process);
+            }
+        }
+    }
     public bool IsCoreAvailable => File.Exists(AppPaths.BundledMihomoPath);
 
     public bool IsAdministrator
@@ -115,7 +129,39 @@ public sealed class MihomoService
         {
             if (await WaitForProxyPortAsync(process, cancellationToken))
             {
-                _process = process;
+                var processJob = new MihomoProcessJob();
+                var registered = false;
+                try
+                {
+                    processJob.Assign(process);
+                    lock (_processLock)
+                    {
+                        if (HasExited(process))
+                        {
+                            throw new InvalidOperationException("Mihomo завершился до проверки VPN-соединения.");
+                        }
+
+                        _stopRequested = false;
+                        _process = process;
+                        _processJob = processJob;
+                        process.Exited += OnProcessExited;
+                        process.EnableRaisingEvents = true;
+                        registered = true;
+                    }
+                }
+                catch
+                {
+                    if (registered || OwnsProcess(process))
+                    {
+                        Stop();
+                    }
+                    else
+                    {
+                        processJob.Dispose();
+                    }
+                    throw;
+                }
+
                 return;
             }
 
@@ -127,7 +173,7 @@ public sealed class MihomoService
         }
         catch
         {
-            if (!processHandled && !ReferenceEquals(_process, process))
+            if (!processHandled && !OwnsProcess(process))
             {
                 await StopAndReadDetailsAsync(process, outputTask, errorTask);
             }
@@ -169,6 +215,20 @@ public sealed class MihomoService
         }
 
         return false;
+    }
+
+    private bool OwnsProcess(Process process)
+    {
+        lock (_processLock)
+        {
+            return ReferenceEquals(_process, process);
+        }
+    }
+
+    private static bool HasExited(Process process)
+    {
+        try { return process.HasExited; }
+        catch (InvalidOperationException) { return true; }
     }
 
     private static async Task<bool> IsLocalPortOpenAsync(CancellationToken cancellationToken)
@@ -217,17 +277,68 @@ public sealed class MihomoService
 
     public void Stop()
     {
-        var process = _process;
-        _process = null;
+        Process? process;
+        MihomoProcessJob? processJob;
+        lock (_processLock)
+        {
+            _stopRequested = true;
+            process = _process;
+            processJob = _processJob;
+            _process = null;
+            _processJob = null;
+            if (process is not null)
+            {
+                process.Exited -= OnProcessExited;
+            }
+        }
+
         if (process is null) return;
         try
         {
-            if (!process.HasExited)
+            if (!HasExited(process))
             {
                 process.Kill(entireProcessTree: true);
                 process.WaitForExit(5000);
             }
         }
-        finally { process.Dispose(); }
+        finally
+        {
+            process.Dispose();
+            processJob?.Dispose();
+        }
     }
+
+    private void OnProcessExited(object? sender, EventArgs eventArgs)
+    {
+        if (sender is not Process process) return;
+
+        MihomoProcessJob? processJob;
+        bool unexpected;
+        int exitCode = -1;
+        lock (_processLock)
+        {
+            if (!ReferenceEquals(_process, process)) return;
+
+            _process = null;
+            processJob = _processJob;
+            _processJob = null;
+            unexpected = !_stopRequested;
+            process.Exited -= OnProcessExited;
+            try { exitCode = process.ExitCode; } catch (InvalidOperationException) { }
+        }
+
+        processJob?.Dispose();
+        process.Dispose();
+        if (unexpected)
+        {
+            UnexpectedExit?.Invoke(this, new MihomoExitedEventArgs(exitCode));
+        }
+    }
+
+    public void Dispose() => Stop();
+}
+
+public sealed class MihomoExitedEventArgs(int exitCode) : EventArgs
+{
+    public int ExitCode { get; } = exitCode;
 }

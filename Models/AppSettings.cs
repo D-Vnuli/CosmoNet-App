@@ -16,7 +16,6 @@ public sealed class AppSettings
     public bool HasExplicitTrafficModeChoice { get; set; }
     public const int CurrentTrafficModeConfigurationVersion = 1;
     public int TrafficModeConfigurationVersion { get; set; }
-    public bool StartMinimized { get; set; }
     public DateTimeOffset? LastSubscriptionRefresh { get; set; }
     public List<string> SelectedProcessNames { get; set; } = [];
     public Dictionary<string, string> SelectedApplicationPaths { get; set; } = new(StringComparer.OrdinalIgnoreCase);

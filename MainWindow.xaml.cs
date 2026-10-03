@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -15,7 +14,6 @@ namespace CosmoNet.App;
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
-    private const int RoundedWindowCornerRadius = 18;
     private readonly MainViewModel _viewModel = new();
     private bool _isMenuOpen;
     private bool _isSubscriptionDialogOpen;
@@ -35,7 +33,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public ICommand ToggleMenuCommand { get; }
 
-    public string AppVersion => GetType().Assembly.GetName().Version?.ToString(3) ?? "0.2.15";
+    public string AppVersion => GetType().Assembly.GetName().Version?.ToString(3) ?? "0.2.25";
 
     public bool IsMenuOpen
     {
@@ -109,14 +107,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Loaded += OnLoaded;
         Closing += OnWindowClosing;
         Closed += OnWindowClosed;
-        StateChanged += OnWindowStateChanged;
         _starfieldTimer.Tick += OnStarfieldTimerTick;
         _trayIcon = CreateTrayIcon();
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        ApplyRoundedWindowRegion();
         AnimateWindowEntrance();
         UpdateStarfieldState();
         await _viewModel.InitializeAsync();
@@ -256,36 +252,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _spawnSecondStar = false;
         StarfieldCanvas?.Children.Clear();
     }
-
-    private void ApplyRoundedWindowRegion()
-    {
-        var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-        if (handle == IntPtr.Zero)
-        {
-            return;
-        }
-
-        var dpi = VisualTreeHelper.GetDpi(this);
-        var width = (int)Math.Ceiling(ActualWidth * dpi.DpiScaleX);
-        var height = (int)Math.Ceiling(ActualHeight * dpi.DpiScaleY);
-        var diameter = (int)Math.Ceiling(RoundedWindowCornerRadius * 2 * dpi.DpiScaleX);
-        var region = CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter);
-
-        if (region != IntPtr.Zero && SetWindowRgn(handle, region, true) == 0)
-        {
-            DeleteObject(region);
-        }
-    }
-
-    [DllImport("gdi32.dll")]
-    private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int width, int height);
-
-    [DllImport("user32.dll")]
-    private static extern int SetWindowRgn(IntPtr handle, IntPtr region, bool redraw);
-
-    [DllImport("gdi32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DeleteObject(IntPtr objectHandle);
 
     private void AnimateWindowEntrance()
     {
@@ -540,7 +506,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Icon = string.IsNullOrWhiteSpace(iconPath)
                 ? System.Drawing.SystemIcons.Application
                 : System.Drawing.Icon.ExtractAssociatedIcon(iconPath) ?? System.Drawing.SystemIcons.Application,
-            Text = "CosmoNet",
+            Text = "CosmoNet VPN",
             ContextMenuStrip = menu,
             Visible = true
         };
@@ -587,19 +553,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void OnMinimizeClick(object sender, RoutedEventArgs e)
-    {
-        WindowState = WindowState.Minimized;
-    }
-
-    private void OnWindowStateChanged(object? sender, EventArgs e)
-    {
-        if (WindowState == WindowState.Minimized)
-        {
-            HideToTray(showNotification: false);
-        }
-    }
-
     private void OnHideToTrayClick(object sender, RoutedEventArgs e)
     {
         HideToTray();
@@ -612,7 +565,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Hide();
         if (showNotification)
         {
-            _trayIcon.ShowBalloonTip(1200, "CosmoNet", "Приложение продолжает работать в трее.", Forms.ToolTipIcon.Info);
+            _trayIcon.ShowBalloonTip(1200, "CosmoNet VPN", "Приложение продолжает работать в трее.", Forms.ToolTipIcon.Info);
         }
     }
 
