@@ -1,0 +1,1857 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Globalization;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Windows.Input;
+using System.Windows.Threading;
+using Microsoft.Win32;
+using CosmoNet.App.Models;
+using CosmoNet.App.Services;
+
+namespace CosmoNet.App.ViewModels;
+
+public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
+{
+    private readonly SettingsStore _settingsStore = new();
+    private readonly SubscriptionService _subscriptionService = new();
+    private readonly TelegramAuthApiClient _telegramAuthApiClient = new();
+    private readonly WindowsReleaseService _windowsReleaseService = new();
+    private readonly TelegramLinkLauncher _telegramLinkLauncher = new();
+    private readonly WindowsUpdateCheckGate _windowsUpdateCheckGate = new();
+    private readonly WindowsUpdateState _windowsUpdateState = new();
+    private readonly CancellationTokenSource _windowsUpdateCancellation = new();
+    private readonly FeedbackApiClient _feedbackApiClient = new();
+    private readonly SecretSettingsStore _secretSettingsStore = new();
+    private readonly SingBoxConfigBuilder _configBuilder = new();
+    private readonly SingBoxService _singBoxService = new();
+    private readonly SystemProxyService _systemProxyService = new();
+    private readonly MihomoConfigBuilder _mihomoConfigBuilder = new();
+    private readonly MihomoService _mihomoService = new();
+    private readonly MihomoConfigFileStore _mihomoConfigFileStore = new();
+    private readonly IVpnConnectivityVerifier _vpnConnectivityVerifier = new VpnConnectivityVerifier();
+    private readonly VpnConnectionLifecycle _vpnConnectionLifecycle = new();
+    private readonly ApplicationIconService _applicationIconService = new();
+    private readonly DispatcherTimer _serverAvailabilityTimer;
+    private readonly DispatcherTimer _subscriptionRefreshTimer;
+    private readonly DispatcherTimer _windowsUpdateTimer;
+    private readonly VpnLogService _vpnLogService = new();
+
+    private const string DefaultProbeHost = "vpn.example.invalid";
+    private const int DefaultProbePort = 443;
+
+    private string _subscriptionUrl = "";
+    private string _authApiBaseUrl = AppSettings.DefaultAuthApiBaseUrl;
+    private string _authDeviceId = "";
+    private string _statusText = "Готов к настройке";
+    private string _authStatus = "Войдите через Telegram, чтобы приложение могло получить вашу подписку.";
+    private string _authSessionId = "";
+    private string _diagnosticText = "Диагностика еще не запускалась.";
+    private string _lastConfigPath = AppPaths.MihomoConfigPath;
+    private AccountSession _accountSession = new();
+    private bool _isAuthMenuOpen;
+    private bool _isBusy;
+    private bool _isConnected;
+    private VpnConnectionPhase _connectionPhase = VpnConnectionPhase.Disconnected;
+    private bool _isServerAvailable;
+    private bool _isCheckingServerAvailability;
+    private bool _isRefreshingSubscription;
+    private bool _isBootstrapVpnActive;
+    private DateTimeOffset? _expiryWarningShownFor;
+    private TrafficMode _trafficMode = TrafficMode.AllTraffic;
+    private DateTimeOffset? _lastRefresh;
+    private string _vpnLogText = "";
+    private bool _isLogMonitoring;
+    private string _feedbackName = "";
+    private string _feedbackContacts = "";
+    private string _feedbackMessage = "";
+    private string _feedbackStatus = "";
+    private bool _isSubmittingFeedback;
+
+    private const int MaximumLogTextLength = 250_000;
+
+    public MainViewModel()
+    {
+        AvailableApplications.CollectionChanged += OnAvailableApplicationsChanged;
+        _systemProxyService.Restore();
+        _vpnLogService.LogReceived += OnLogReceived;
+        _mihomoService.UnexpectedExit += OnMihomoUnexpectedExit;
+
+        _serverAvailabilityTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(15)
+        };
+        _serverAvailabilityTimer.Tick += async (_, _) => { await RefreshServerAvailabilityAsync(); RefreshSubscriptionStatus(); };
+        _subscriptionRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _subscriptionRefreshTimer.Tick += async (_, _) => await RefreshSubscriptionInBackgroundAsync();
+        _windowsUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
+        _windowsUpdateTimer.Tick += async (_, _) => await CheckForWindowsUpdateAsync();
+
+        RefreshCommand = new RelayCommand(RefreshAsync, () => !IsBusy && !IsConnected);
+        PowerCommand = new RelayCommand(
+            ToggleConnectionAsync,
+            () => !IsBusy && CanUsePowerButton);
+        DisconnectCommand = new RelayCommand(DisconnectAsync, () => !IsBusy && IsConnected);
+        SaveCommand = new RelayCommand(SaveAsync, () => !IsBusy);
+        OpenDataFolderCommand = new RelayCommand(OpenDataFolderAsync);
+        BrowseApplicationCommand = new RelayCommand(BrowseApplicationAsync, () => !IsBusy);
+        ShowAuthMethodsCommand = new RelayCommand(ShowAuthMethods, () => !IsBusy && !AccountSession.IsAuthorized);
+        LoginCommand = new RelayCommand(LoginAsync, () => !IsBusy && !AccountSession.IsAuthorized && string.IsNullOrEmpty(_authSessionId));
+        LogoutCommand = new RelayCommand(LogoutAsync, () => !IsBusy && AccountSession.IsAuthorized);
+        OpenWindowsUpdateCommand = new RelayCommand(OpenWindowsUpdateAsync, () => IsWindowsUpdateAvailable);
+        RunDiagnosticsCommand = new RelayCommand(RunDiagnosticsAsync, () => !IsBusy);
+        EnableLogsCommand = new RelayCommand(EnableLogsAsync, () => !IsLogMonitoring);
+        DisableLogsCommand = new RelayCommand(DisableLogsAsync, () => IsLogMonitoring);
+        ClearLogsCommand = new RelayCommand(ClearLogsAsync);
+        SaveLogsCommand = new RelayCommand(SaveLogsAsync);
+        SubmitFeedbackCommand = new RelayCommand(SubmitFeedbackAsync, CanSubmitFeedback);
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public event EventHandler? SettingsSaved;
+    public event EventHandler<string>? SubscriptionNotificationRequested;
+
+    public ObservableCollection<VpnProfile> Profiles { get; } = new();
+    public ObservableCollection<InstalledApplication> AvailableApplications { get; } = new();
+
+    public ICommand RefreshCommand { get; }
+    public ICommand PowerCommand { get; }
+    public ICommand DisconnectCommand { get; }
+    public ICommand SaveCommand { get; }
+    public ICommand OpenDataFolderCommand { get; }
+    public ICommand BrowseApplicationCommand { get; }
+    public ICommand ShowAuthMethodsCommand { get; }
+    public ICommand LoginCommand { get; }
+    public ICommand LogoutCommand { get; }
+    public ICommand OpenWindowsUpdateCommand { get; }
+    public ICommand RunDiagnosticsCommand { get; }
+    public ICommand EnableLogsCommand { get; }
+    public ICommand DisableLogsCommand { get; }
+    public ICommand ClearLogsCommand { get; }
+    public ICommand SaveLogsCommand { get; }
+    public ICommand SubmitFeedbackCommand { get; }
+
+    public string SubscriptionUrl
+    {
+        get => _subscriptionUrl;
+        set => SetField(ref _subscriptionUrl, value);
+    }
+
+    public string AuthApiBaseUrl
+    {
+        get => _authApiBaseUrl;
+        set => SetField(ref _authApiBaseUrl, value);
+    }
+
+    public string StatusText
+    {
+        get => _statusText;
+        set => SetField(ref _statusText, value);
+    }
+
+    public string AuthStatus
+    {
+        get => _authStatus;
+        set => SetField(ref _authStatus, value);
+    }
+
+
+    public string DiagnosticText
+    {
+        get => _diagnosticText;
+        set => SetField(ref _diagnosticText, value);
+    }
+
+    public string VpnLogText
+    {
+        get => _vpnLogText;
+        private set => SetField(ref _vpnLogText, value);
+    }
+
+
+    public string FeedbackName
+    {
+        get => _feedbackName;
+        set
+        {
+            if (SetField(ref _feedbackName, value))
+            {
+                RaiseFeedbackCommandState();
+            }
+        }
+    }
+
+    public string FeedbackContacts
+    {
+        get => _feedbackContacts;
+        set
+        {
+            if (SetField(ref _feedbackContacts, value))
+            {
+                RaiseFeedbackCommandState();
+            }
+        }
+    }
+
+    public string FeedbackMessage
+    {
+        get => _feedbackMessage;
+        set
+        {
+            if (SetField(ref _feedbackMessage, value))
+            {
+                RaiseFeedbackCommandState();
+            }
+        }
+    }
+
+    public string FeedbackStatus
+    {
+        get => _feedbackStatus;
+        private set => SetField(ref _feedbackStatus, value);
+    }
+
+    public bool IsSubmittingFeedback
+    {
+        get => _isSubmittingFeedback;
+        private set
+        {
+            if (SetField(ref _isSubmittingFeedback, value))
+            {
+                RaiseFeedbackCommandState();
+            }
+        }
+    }
+    public bool IsLogMonitoring
+    {
+        get => _isLogMonitoring;
+        private set
+        {
+            if (SetField(ref _isLogMonitoring, value))
+            {
+                RaiseLogCommandStates();
+            }
+        }
+    }
+
+    public string LastConfigPath
+    {
+        get => _lastConfigPath;
+        set => SetField(ref _lastConfigPath, value);
+    }
+
+    public string SecretStorageText => $"Секреты: {AppPaths.SecretSettingsPath}";
+
+    public AccountSession AccountSession
+    {
+        get => _accountSession;
+        set
+        {
+            if (SetField(ref _accountSession, value))
+            {
+                if (!value.IsAuthorized)
+                {
+                    SetAvailableWindowsUpdate(null);
+                }
+                RefreshSubscriptionStatus();
+                OnPropertyChanged(nameof(AccountButtonText));
+                OnPropertyChanged(nameof(IsAuthorized));
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    public SubscriptionSummary Subscription => AccountSession.Subscription ?? SubscriptionSummary.Empty;
+    public string AccountButtonText => AccountSession.IsAuthorized
+        ? (string.IsNullOrWhiteSpace(AccountSession.DisplayName) ? "CosmoNet" : AccountSession.DisplayName)
+        : "Вход";
+    public bool IsAuthorized => AccountSession.IsAuthorized;
+    public bool IsWindowsUpdateAvailable => _windowsUpdateState.IsUpdateAvailable;
+    public bool IsAuthMenuOpen
+    {
+        get => _isAuthMenuOpen;
+        set => SetField(ref _isAuthMenuOpen, value);
+    }
+
+
+
+    public string AccountDisplayText => AccountSession.IsAuthorized
+        ? AccountSession.DisplayName
+        : "Telegram не подключен";
+
+    public bool IsBusy
+    {
+        get => _isBusy;
+        set
+        {
+            if (SetField(ref _isBusy, value))
+            {
+                RaiseCommandStates();
+                OnPropertyChanged(nameof(PowerButtonColor));
+                OnPropertyChanged(nameof(ConnectionStateText));
+            }
+        }
+    }
+
+    public bool IsConnected
+    {
+        get => _isConnected;
+        set
+        {
+            if (SetField(ref _isConnected, value))
+            {
+                RaiseCommandStates();
+                OnPropertyChanged(nameof(PowerButtonColor));
+                OnPropertyChanged(nameof(ConnectionStateText));
+                OnPropertyChanged(nameof(ConnectionStatusTitle));
+                OnPropertyChanged(nameof(CanUsePowerButton));
+                OnPropertyChanged(nameof(ServerStatusText));
+                OnPropertyChanged(nameof(ServerStatusColor));
+                OnPropertyChanged(nameof(CurrentCountryName));
+                OnPropertyChanged(nameof(CurrentCountryFlag));
+                OnPropertyChanged(nameof(CurrentCountryCode));
+            }
+        }
+    }
+
+    public VpnConnectionPhase ConnectionPhase
+    {
+        get => _connectionPhase;
+        private set
+        {
+            if (SetField(ref _connectionPhase, value))
+            {
+                OnPropertyChanged(nameof(ConnectionStateText));
+                OnPropertyChanged(nameof(PowerButtonColor));
+            }
+        }
+    }
+
+    public TrafficMode TrafficMode
+    {
+        get => _trafficMode;
+        set
+        {
+            if (SetField(ref _trafficMode, value))
+            {
+                OnPropertyChanged(nameof(IsAllTrafficMode));
+                OnPropertyChanged(nameof(IsSelectedAppsMode));
+                OnPropertyChanged(nameof(TrafficModeText));
+            }
+        }
+    }
+
+    public bool IsAllTrafficMode
+    {
+        get => TrafficMode == TrafficMode.AllTraffic;
+        set
+        {
+            if (value)
+            {
+                TrafficMode = TrafficMode.AllTraffic;
+            }
+        }
+    }
+
+    public bool IsSelectedAppsMode
+    {
+        get => TrafficMode == TrafficMode.SelectedApps;
+        set
+        {
+            if (value)
+            {
+                TrafficMode = TrafficMode.SelectedApps;
+            }
+        }
+    }
+
+    public DateTimeOffset? LastRefresh
+    {
+        get => _lastRefresh;
+        set
+        {
+            if (SetField(ref _lastRefresh, value))
+            {
+                OnPropertyChanged(nameof(LastRefreshText));
+            }
+        }
+    }
+
+    public string CoreStatus => _mihomoService.IsCoreAvailable
+        ? "Ядро Mihomo найдено"
+        : "Нужно добавить Resources\\mihomo\\mihomo.exe";
+
+    public string AdminStatus => _mihomoService.IsAdministrator
+        ? "Запущено с правами администратора"
+        : "Для подключения нужен запуск от администратора";
+    public string SubscriptionExpiresText => Subscription.ExpiresAt is null
+        ? (EffectiveSubscriptionStatus == SubscriptionStatus.Active ? "\u0411\u0435\u0437\u0433\u0440\u0430\u043d\u0438\u0447\u043d\u043e" : "\u041e\u0436\u0438\u0434\u0430\u0435\u0442 Telegram")
+        : Subscription.ExpiresAt.Value.ToLocalTime().ToString("dd.MM.yyyy");
+
+    public string SubscriptionStatusText => EffectiveSubscriptionStatus switch
+    {
+        SubscriptionStatus.Active => "Активна",
+        SubscriptionStatus.ExpiringSoon => "Скоро закончится",
+        SubscriptionStatus.Expired => "Истекла",
+        SubscriptionStatus.Disabled => "Отключена",
+        SubscriptionStatus.NoSubscription => "Не найдена",
+        _ => "Ожидает данные"
+    };
+
+    public string SubscriptionTariffText => string.IsNullOrWhiteSpace(Subscription.TariffName)
+        ? "Тариф неизвестен"
+        : Subscription.TariffName;
+
+    public string SubscriptionDevicesText => Subscription.DeviceLimit switch
+    {
+        > 0 => $"Устройств: до {Subscription.DeviceLimit}",
+        0 => "Устройств: безгранично",
+        _ => "Лимит устройств не указан"
+    };
+
+    public string SubscriptionTrafficText => Subscription.TrafficLimitBytes > 0
+        ? $"Трафик: {FormatBytes(Subscription.TrafficUsedBytes)} / {FormatBytes(Subscription.TrafficLimitBytes)}"
+        : $"Использовано: {FormatBytes(Subscription.TrafficUsedBytes)}";
+
+    public string SubscriptionLastSyncText => Subscription.LastSyncedAt is null
+        ? "Синхронизация еще не выполнялась"
+        : $"Синхронизация: {Subscription.LastSyncedAt.Value.ToLocalTime():dd.MM.yyyy HH:mm}";
+
+    public string SubscriptionModalStatusText => EffectiveSubscriptionStatus switch
+    {
+        SubscriptionStatus.Active => "Активна",
+        SubscriptionStatus.ExpiringSoon => "Скоро закончится",
+        _ => "Не активна"
+    };
+
+    public string SubscriptionModalStatusColor => EffectiveSubscriptionStatus switch
+    {
+        SubscriptionStatus.Active => "#35D587",
+        SubscriptionStatus.ExpiringSoon => "#F0A33C",
+        _ => "#E6585C"
+    };
+
+    public string SubscriptionModalExpiresText => Subscription.ExpiresAt is null
+        ? (EffectiveSubscriptionStatus == SubscriptionStatus.Active ? "\u0411\u0435\u0437\u0433\u0440\u0430\u043d\u0438\u0447\u043d\u043e" : "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u043e")
+        : Subscription.ExpiresAt.Value.ToLocalTime().ToString("dd MMMM yyyy", CultureInfo.GetCultureInfo("ru-RU"));
+
+    public string SubscriptionModalCountryText => $"{CurrentCountryFlag} {CurrentCountryName}";
+
+    public string SubscriptionModalDeviceLimitText => Subscription.DeviceLimit switch
+    {
+        > 0 => Subscription.DeviceLimit.Value.ToString(CultureInfo.InvariantCulture),
+        0 => "Безгранично",
+        _ => "Не указано"
+    };
+
+    public string SubscriptionModalTrafficUsedText => FormatBytes(Subscription.TrafficUsedBytes);
+
+    private SubscriptionStatus EffectiveSubscriptionStatus
+    {
+        get
+        {
+            return SubscriptionStateEvaluator.Resolve(Subscription, DateTimeOffset.UtcNow);
+        }
+    }
+
+    public bool CanUseVpn => SubscriptionStateEvaluator.CanUseVpn(
+        Subscription,
+        DateTimeOffset.UtcNow);
+
+    public bool IsSubscriptionBlocked => SubscriptionStateEvaluator.IsSubscriptionBlocked(
+        Subscription,
+        DateTimeOffset.UtcNow);
+
+    public bool CanUsePowerButton => SubscriptionStateEvaluator.CanUsePowerControl(
+        Subscription,
+        DateTimeOffset.UtcNow,
+        IsConnected);
+
+    public string SubscriptionBlockedMessage => EffectiveSubscriptionStatus switch
+    {
+        SubscriptionStatus.Expired => "Ваша подписка закончилась. VPN недоступен. Чтобы продолжить пользоваться CosmoNet, продлите подписку.",
+        SubscriptionStatus.Disabled => "Ваша подписка отключена. VPN недоступен. Обратитесь в поддержку или продлите подписку.",
+        SubscriptionStatus.NoSubscription => "Подписка не найдена. VPN недоступен. Оформите или продлите подписку в Telegram.",
+        _ => "VPN недоступен. Не удалось подтвердить подписку."
+    };
+
+    public string PowerButtonToolTip => !CanUseVpn
+        ? SubscriptionBlockedMessage
+        : "Подключить или отключить VPN";
+    public string ServerStatusText => _isServerAvailable
+        ? "Сервер доступен"
+        : "Сервер недоступен";
+
+    public string ServerStatusColor => _isServerAvailable
+        ? "#35D587"
+        : "#E6585C";
+
+    private VpnProfile? PreferredProfile => Profiles
+        .OrderBy(profile => profile.ConnectionPriority)
+        .FirstOrDefault();
+
+    public string CurrentCountryName => PreferredProfile?.CountryName ?? "Нидерланды";
+    public string CurrentCountryFlag => PreferredProfile?.CountryFlag ?? "🇳🇱";
+    public string CurrentCountryCode => PreferredProfile?.CountryCode ?? "NL";
+
+    public string ConnectionStatusTitle => IsConnected ? "Подключено" : "Не подключено";
+
+    public string ConnectionStateText => ConnectionPhase == VpnConnectionPhase.Verifying
+        ? "Проверяем VPN-соединение"
+        : IsBusy
+        ? "Идет подключение"
+        : IsConnected
+            ? "VPN активен"
+            : ConnectionPhase == VpnConnectionPhase.Error
+                ? "Ошибка подключения"
+            : !CanUseVpn
+                ? "VPN недоступен"
+            : "VPN выключен";
+
+    public string PowerButtonColor => IsBusy
+        ? "#2F80ED"
+        : IsConnected
+            ? "#18A07A"
+            : "#8B96A8";
+
+    public string TrafficModeText => TrafficMode == TrafficMode.AllTraffic
+        ? "Весь трафик через VPN"
+        : "Через VPN только выбранные приложения";
+
+    public string SelectedApplicationsText => $"Выбрано приложений: {GetSelectedProcessNames().Count}";
+
+    public string LastRefreshText => LastRefresh?.ToString("dd.MM.yyyy HH:mm") ?? "Еще не обновлялась";
+
+    public async Task InitializeAsync()
+    {
+        CleanupMihomoConfig();
+        var settings = await _settingsStore.LoadAsync();
+        var secrets = await _secretSettingsStore.LoadAsync();
+        SubscriptionUrl = string.IsNullOrWhiteSpace(settings.SubscriptionUrl) ? secrets.SubscriptionUrl : settings.SubscriptionUrl;
+        AuthApiBaseUrl = string.IsNullOrWhiteSpace(settings.AuthApiBaseUrl)
+            ? AppSettings.DefaultAuthApiBaseUrl
+            : settings.AuthApiBaseUrl;
+        _authDeviceId = string.IsNullOrWhiteSpace(secrets.AuthDeviceId)
+            ? Guid.NewGuid().ToString("N")
+            : secrets.AuthDeviceId;
+        if (secrets.AuthDeviceId != _authDeviceId)
+        {
+            secrets.AuthDeviceId = _authDeviceId;
+            await _secretSettingsStore.SaveAsync(secrets);
+        }
+        AccountSession = settings.AccountSession ?? new AccountSession();
+        TrafficMode = settings.TrafficMode;
+        LastRefresh = settings.LastSubscriptionRefresh;
+        LoadSavedApplications(settings.SelectedProcessNames, settings.SelectedApplicationPaths);
+
+        OnPropertyChanged(nameof(CoreStatus));
+        OnPropertyChanged(nameof(AdminStatus));
+        RefreshDerivedStatus();
+
+        await RefreshServerAvailabilityAsync();
+        await RefreshSubscriptionInBackgroundAsync();
+        _serverAvailabilityTimer.Start();
+        _subscriptionRefreshTimer.Start();
+        _windowsUpdateTimer.Start();
+        _ = CheckForWindowsUpdateAsync();
+    }
+
+    public void Dispose()
+    {
+        _mihomoService.UnexpectedExit -= OnMihomoUnexpectedExit;
+        _vpnConnectionLifecycle.BeginDisconnect();
+        ConnectionPhase = _vpnConnectionLifecycle.Phase;
+        _mihomoService.Stop();
+        CleanupMihomoConfig();
+        IsConnected = false;
+        _vpnConnectionLifecycle.MarkDisconnected();
+        ConnectionPhase = _vpnConnectionLifecycle.Phase;
+        StopBootstrapVpn();
+        _serverAvailabilityTimer.Stop();
+        _subscriptionRefreshTimer.Stop();
+        _windowsUpdateTimer.Stop();
+        _windowsUpdateCancellation.Cancel();
+        _windowsUpdateCancellation.Dispose();
+        _vpnLogService.LogReceived -= OnLogReceived;
+        _vpnLogService.Dispose();
+        _systemProxyService.Restore();
+    }
+
+    private async Task EnableLogsAsync()
+    {
+        try
+        {
+            VpnLogText = TrimLogText(await _vpnLogService.StartAsync());
+            IsLogMonitoring = true;
+            StatusText = "Логирование включено";
+        }
+        catch (Exception error)
+        {
+            StatusText = $"Не удалось включить логирование: {error.Message}";
+        }
+    }
+
+    private Task DisableLogsAsync()
+    {
+        _vpnLogService.Stop();
+        IsLogMonitoring = false;
+        StatusText = "Логирование отключено";
+        return Task.CompletedTask;
+    }
+
+    private async Task ClearLogsAsync()
+    {
+        try
+        {
+            await _vpnLogService.ClearAsync();
+            VpnLogText = "";
+            StatusText = "Логи очищены";
+        }
+        catch (Exception error)
+        {
+            StatusText = $"Не удалось очистить логи: {error.Message}";
+        }
+    }
+
+    private async Task SaveLogsAsync()
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Сохранить логи CosmoNet",
+            Filter = "Текстовые файлы (*.txt)|*.txt",
+            DefaultExt = ".txt",
+            FileName = $"cosmonet-log-{DateTime.Now:yyyyMMdd-HHmmss}.txt"
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            await _vpnLogService.SaveAsAsync(dialog.FileName, VpnLogText);
+            StatusText = "Логи сохранены";
+        }
+        catch (Exception error)
+        {
+            StatusText = $"Не удалось сохранить логи: {error.Message}";
+        }
+    }
+
+    private async Task<SubscriptionLoadResult> LoadSubscriptionWithMetadataAsync()
+    {
+        var serverSubscription = await TryLoadAuthorizedSubscriptionAsync();
+        if (serverSubscription is null
+            || !SubscriptionStateEvaluator.CanApplyRefresh(
+                serverSubscription.Subscription,
+                serverSubscription.SubscriptionUrl))
+        {
+            throw new InvalidOperationException("Subscription data is unavailable.");
+        }
+
+        await UpdateSubscriptionUrlAsync(serverSubscription.SubscriptionUrl);
+        if (string.IsNullOrWhiteSpace(SubscriptionUrl))
+        {
+            return new SubscriptionLoadResult { Summary = serverSubscription.Subscription };
+        }
+
+        var loaded = await _subscriptionService.LoadSubscriptionAsync(SubscriptionUrl);
+        return new SubscriptionLoadResult
+        {
+            Profiles = loaded.Profiles,
+            Summary = serverSubscription.Subscription
+        };
+    }
+    private async Task<AppSubscriptionResult?> TryLoadAuthorizedSubscriptionAsync()
+    {
+        if (!AccountSession.IsAuthorized || string.IsNullOrWhiteSpace(AuthApiBaseUrl))
+        {
+            return null;
+        }
+
+        var secrets = await _secretSettingsStore.LoadAsync();
+        if (string.IsNullOrWhiteSpace(secrets.AuthToken))
+        {
+            throw new InvalidOperationException("Subscription authorization token is unavailable.");
+        }
+
+        try
+        {
+            return await _telegramAuthApiClient.GetSubscriptionAsync(
+                AuthApiBaseUrl,
+                secrets.AuthToken);
+        }
+        catch (Exception error)
+        {
+            throw new InvalidOperationException("Subscription service is temporarily unavailable.", error);
+        }
+    }
+
+    private async Task UpdateSubscriptionUrlAsync(string subscriptionUrl)
+    {
+        var normalized = subscriptionUrl?.Trim() ?? "";
+        if (string.Equals(SubscriptionUrl, normalized, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        SubscriptionUrl = normalized;
+        var secrets = await _secretSettingsStore.LoadAsync();
+        secrets.SubscriptionUrl = normalized;
+        await _secretSettingsStore.SaveAsync(secrets);
+    }
+
+    public async Task RefreshSubscriptionInBackgroundAsync()
+    {
+        if (_isRefreshingSubscription || !AccountSession.IsAuthorized)
+        {
+            return;
+        }
+
+        _isRefreshingSubscription = true;
+        try
+        {
+            var subscription = await LoadSubscriptionWithMetadataAsync();
+            ApplySubscription(subscription);
+            LastRefresh = DateTimeOffset.Now;
+            await SaveAsync(setStatus: false);
+            RefreshDerivedStatus();
+        }
+        catch
+        {
+            // Keep the last successful subscription data visible while the endpoint is unavailable.
+            StatusText = "Не удалось обновить подписку. Используются последние подтвержденные данные.";
+        }
+        finally
+        {
+            _isRefreshingSubscription = false;
+        }
+    }
+    private Task ShowAuthMethods() { IsAuthMenuOpen = true; return Task.CompletedTask; }
+
+    private async Task LoginAsync()
+    {
+        IsAuthMenuOpen = false;
+        if (string.IsNullOrWhiteSpace(AuthApiBaseUrl))
+        {
+            AuthStatus = "Сервис авторизации временно недоступен.";
+            StatusText = "Не задан адрес API авторизации.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            if (_singBoxService.IsRunning)
+            {
+                throw new InvalidOperationException("Сначала отключите текущее VPN-подключение.");
+            }
+
+            var result = await _telegramAuthApiClient.StartAsync(AuthApiBaseUrl, _authDeviceId);
+            var telegramDesktopPath = FindTelegramDesktop();
+            _authSessionId = result.SessionId;
+            RaiseCommandStates();
+            try
+            {
+                var bootstrapProfiles = result.BootstrapVpns
+                    .Where(profile => !string.IsNullOrWhiteSpace(profile.VlessUri))
+                    .ToList();
+                if (bootstrapProfiles.Count == 0 &&
+                    !string.IsNullOrWhiteSpace(result.BootstrapVpn?.VlessUri))
+                {
+                    bootstrapProfiles.Add(result.BootstrapVpn);
+                }
+
+                if (bootstrapProfiles.Count > 0)
+                {
+                    await StartBootstrapVpnAsync(bootstrapProfiles, telegramDesktopPath);
+                }
+
+                if (!string.IsNullOrWhiteSpace(telegramDesktopPath))
+                {
+                    AuthStatus = "Подтвердите вход в Telegram Desktop.";
+                    OpenTelegramDesktopAuthorization(result.TelegramDeepLink);
+                }
+                else
+                {
+                    AuthStatus = "Подтвердите вход в Telegram Web.";
+                    OpenTelegramAuthorizationLink(string.IsNullOrWhiteSpace(result.TelegramWebLink)
+                        ? result.TelegramDeepLink
+                        : result.TelegramWebLink);
+                }
+                _ = PollAuthorizationAsync(result.SessionId);
+            }
+            catch
+            {
+                _authSessionId = "";
+                StopBootstrapVpn();
+                RaiseCommandStates();
+                throw;
+            }
+        });
+    }
+
+    private static string? FindTelegramDesktop()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Telegram Desktop", "Telegram.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Telegram Desktop", "Telegram.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Telegram Desktop", "Telegram.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Telegram Desktop", "Telegram.exe"),
+        };
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static void OpenTelegramDesktopAuthorization(string link)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = SecurityPolicy.RequireTelegramDeepLink(link).AbsoluteUri,
+            UseShellExecute = true,
+        });
+    }
+    private static void OpenTelegramAuthorizationLink(string link)
+    {
+        var browserPath = FindTelegramWebBrowser();
+        if (string.IsNullOrWhiteSpace(browserPath))
+        {
+            throw new FileNotFoundException("Telegram Web browser is unavailable.");
+        }
+
+        var browserProfile = Path.Combine(AppPaths.DataDirectory, "telegram-web-auth");
+        Directory.CreateDirectory(browserProfile);
+        var startInfo = new ProcessStartInfo { FileName = browserPath, UseShellExecute = false };
+        startInfo.ArgumentList.Add($"--proxy-server=http://127.0.0.1:{SystemProxyService.BootstrapPort}");
+        startInfo.ArgumentList.Add("--proxy-bypass-list=<-loopback>");
+        startInfo.ArgumentList.Add("--disable-quic");
+        startInfo.ArgumentList.Add($"--user-data-dir={browserProfile}");
+        startInfo.ArgumentList.Add(SecurityPolicy.RequireTelegramWebLink(link).AbsoluteUri);
+        Process.Start(startInfo);
+    }
+    private static string? FindTelegramWebBrowser()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft", "Edge", "Application", "msedge.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft", "Edge", "Application", "msedge.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google", "Chrome", "Application", "chrome.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google", "Chrome", "Application", "chrome.exe"),
+        };
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private async Task StartBootstrapVpnAsync(
+        IReadOnlyList<BootstrapVpnProfile> bootstrapProfiles,
+        string? telegramDesktopPath)
+    {
+        List<Exception> failures = [];
+
+        foreach (var bootstrap in bootstrapProfiles)
+        {
+            try
+            {
+                await StartSingleBootstrapVpnAsync(bootstrap, telegramDesktopPath);
+                return;
+            }
+            catch (Exception error)
+            {
+                failures.Add(error);
+                StopBootstrapVpn();
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Временный VPN не смог подключиться к Telegram.",
+            failures.LastOrDefault());
+    }
+
+    private async Task StartSingleBootstrapVpnAsync(BootstrapVpnProfile bootstrap, string? telegramDesktopPath)
+    {
+        var profiles = _subscriptionService.ParseSubscription(bootstrap.VlessUri);
+        if (profiles.Count != 1)
+        {
+            throw new InvalidOperationException("Получен некорректный временный VPN-профиль.");
+        }
+
+        var desktopMode = !string.IsNullOrWhiteSpace(telegramDesktopPath);
+        var configPath = desktopMode
+            ? await _configBuilder.WriteBootstrapDesktopConfigAsync(profiles[0], Path.GetFileName(telegramDesktopPath!))
+            : await _configBuilder.WriteBootstrapConfigAsync(profiles[0]);
+        using var configLock = _singBoxService.LockConfigForExecution(configPath);
+        var diagnostic = await _singBoxService.CheckConfigAsync(configPath);
+        if (!diagnostic.Success)
+        {
+            throw new InvalidOperationException(diagnostic.Message);
+        }
+
+        await _singBoxService.StartAsync(configPath, useTunMode: desktopMode);
+        _isBootstrapVpnActive = true;
+
+        await VerifyBootstrapVpnAsync();
+        IsConnected = true;
+        StatusText = "Временный VPN подключен для авторизации в Telegram.";
+    }
+
+    private static async Task VerifyBootstrapVpnAsync()
+    {
+        try
+        {
+            using var handler = new HttpClientHandler
+            {
+                Proxy = new WebProxy($"http://127.0.0.1:{SystemProxyService.BootstrapPort}"),
+                UseProxy = true,
+                AllowAutoRedirect = false,
+            };
+            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+            using var response = await client.GetAsync("http://api.telegram.org/");
+            if ((int)response.StatusCode is < 200 or >= 400)
+            {
+                throw new HttpRequestException($"Telegram returned HTTP {(int)response.StatusCode}.");
+            }
+        }
+        catch (Exception error)
+        {
+            throw new InvalidOperationException(
+                $"Временный VPN не смог подключиться к Telegram: {error.Message}",
+                error);
+        }
+    }
+    private async Task PollAuthorizationAsync(string sessionId)
+    {
+        while (_authSessionId == sessionId)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                var result = await _telegramAuthApiClient.GetStatusAsync(AuthApiBaseUrl, _authDeviceId, sessionId);
+                AuthStatus = result.Message;
+                if (!result.IsAuthorized)
+                {
+                    if (!result.IsPending)
+                    {
+                        _authSessionId = "";
+                        StopBootstrapVpn();
+                        RaiseCommandStates();
+                        return;
+                    }
+                    continue;
+                }
+
+                var secrets = await _secretSettingsStore.LoadAsync();
+                secrets.AuthToken = result.AuthToken;
+                secrets.SubscriptionUrl = result.SubscriptionUrl;
+                await _secretSettingsStore.SaveAsync(secrets);
+                SubscriptionUrl = result.SubscriptionUrl;
+                AccountSession = new AccountSession
+                {
+                    IsAuthorized = true,
+                    DisplayName = result.DisplayName,
+                    AuthorizedAt = DateTimeOffset.Now,
+                    Subscription = result.Subscription ?? new SubscriptionSummary(),
+                };
+                _authSessionId = "";
+                await SaveAsync(setStatus: false);
+                StopBootstrapVpn();
+                _ = CheckForWindowsUpdateAsync();
+                return;
+            }
+            catch
+            {
+                AuthStatus = "Временный VPN подключен. Ожидаем подтверждения в Telegram…";
+            }
+        }
+    }
+
+    private void StopBootstrapVpn()
+    {
+        if (!_isBootstrapVpnActive) return;
+
+        _singBoxService.Stop();
+        _isBootstrapVpnActive = false;
+        IsConnected = false;
+        try
+        {
+            File.Delete(AppPaths.BootstrapConfigPath);
+        }
+        catch (IOException)
+        {
+        }
+    }
+    public async Task StartYooKassaPaymentAsync(string tariffCode)
+    {
+        if (!AccountSession.IsAuthorized || string.IsNullOrWhiteSpace(AuthApiBaseUrl))
+        {
+            StatusText = "\u0412\u043e\u0439\u0434\u0438\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 Telegram, \u0447\u0442\u043e\u0431\u044b \u043e\u043f\u043b\u0430\u0442\u0438\u0442\u044c \u043f\u043e\u0434\u043f\u0438\u0441\u043a\u0443.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            var secrets = await _secretSettingsStore.LoadAsync();
+            if (string.IsNullOrWhiteSpace(secrets.AuthToken))
+            {
+                throw new InvalidOperationException("\u0421\u0435\u0441\u0441\u0438\u044f Telegram \u0438\u0441\u0442\u0435\u043a\u043b\u0430. \u0412\u043e\u0439\u0434\u0438\u0442\u0435 \u0437\u0430\u043d\u043e\u0432\u043e.");
+            }
+
+            var payment = await _telegramAuthApiClient.CreateYooKassaPaymentAsync(
+                AuthApiBaseUrl,
+                secrets.AuthToken,
+                tariffCode.ToLowerInvariant());
+            if (string.IsNullOrWhiteSpace(payment.PaymentUrl))
+            {
+                throw new InvalidOperationException("\u0421\u0435\u0440\u0432\u0438\u0441 \u043e\u043f\u043b\u0430\u0442\u044b \u043d\u0435 \u0432\u0435\u0440\u043d\u0443\u043b \u0441\u0441\u044b\u043b\u043a\u0443.");
+            }
+
+            Process.Start(new ProcessStartInfo(SecurityPolicy.RequirePaymentUrl(payment.PaymentUrl).AbsoluteUri) { UseShellExecute = true });
+            StatusText = "\u041e\u0442\u043a\u0440\u043e\u0439\u0442\u0435 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0443 \u043e\u043f\u043b\u0430\u0442\u044b \u0432 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0435. \u041f\u043e\u0441\u043b\u0435 \u043e\u043f\u043b\u0430\u0442\u044b \u043f\u043e\u0434\u043f\u0438\u0441\u043a\u0430 \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438.";
+        });
+    }
+
+    private async Task LogoutAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            if (IsConnected) await DisconnectAsync();
+            var secrets = await _secretSettingsStore.LoadAsync();
+            if (!string.IsNullOrWhiteSpace(secrets.AuthToken) && !string.IsNullOrWhiteSpace(AuthApiBaseUrl))
+                try { await _telegramAuthApiClient.LogoutAsync(AuthApiBaseUrl, secrets.AuthToken); } catch { }
+            secrets.AuthToken = ""; secrets.SubscriptionUrl = "";
+            await _secretSettingsStore.SaveAsync(secrets);
+            SubscriptionUrl = ""; ReplaceProfiles([]); AccountSession = new AccountSession();
+            await SaveAsync(setStatus: false);
+        });
+    }
+
+    private async Task CheckForWindowsUpdateAsync()
+    {
+        if (!AccountSession.IsAuthorized)
+        {
+            return;
+        }
+
+        var currentVersion = GetType().Assembly.GetName().Version;
+        if (currentVersion is null || !_windowsUpdateCheckGate.TryEnter())
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await _windowsReleaseService.CheckForUpdateAsync(
+                AuthApiBaseUrl,
+                currentVersion,
+                _windowsUpdateCancellation.Token);
+            if (_windowsUpdateState.ApplyVerifiedResult(result))
+            {
+                OnPropertyChanged(nameof(IsWindowsUpdateAvailable));
+                ((RelayCommand)OpenWindowsUpdateCommand).RaiseCanExecuteChanged();
+            }
+        }
+        finally
+        {
+            _windowsUpdateCheckGate.Exit();
+        }
+    }
+
+    private Task OpenWindowsUpdateAsync()
+    {
+        if (_windowsUpdateState.AvailableUpdate is not null)
+        {
+            _telegramLinkLauncher.TryOpen(_windowsUpdateState.AvailableUpdate);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void SetAvailableWindowsUpdate(WindowsReleaseInfo? update)
+    {
+        if (!_windowsUpdateState.SetVerifiedUpdate(update))
+        {
+            return;
+        }
+        OnPropertyChanged(nameof(IsWindowsUpdateAvailable));
+        ((RelayCommand)OpenWindowsUpdateCommand).RaiseCanExecuteChanged();
+    }
+
+    private bool CanSubmitFeedback()
+    {
+        return !IsBusy && !IsSubmittingFeedback &&
+               !string.IsNullOrWhiteSpace(FeedbackName) &&
+               !string.IsNullOrWhiteSpace(FeedbackContacts) &&
+               !string.IsNullOrWhiteSpace(FeedbackMessage);
+    }
+
+    private async Task SubmitFeedbackAsync()
+    {
+        if (!CanSubmitFeedback())
+        {
+            FeedbackStatus = "Заполните имя, контакт и текст обращения.";
+            return;
+        }
+
+        IsSubmittingFeedback = true;
+        FeedbackStatus = "Отправляем обращение...";
+
+        try
+        {
+            await _feedbackApiClient.SendAsync(
+                GetFeedbackApiBaseUrl(),
+                FeedbackName,
+                FeedbackContacts,
+                FeedbackMessage);
+
+            FeedbackMessage = "";
+            FeedbackStatus = "Обращение отправлено. Мы свяжемся с вами по указанному контакту.";
+        }
+        catch
+        {
+            FeedbackStatus = "Не удалось отправить обращение. Попробуйте позже.";
+        }
+        finally
+        {
+            IsSubmittingFeedback = false;
+        }
+    }
+
+
+    private string GetFeedbackApiBaseUrl()
+    {
+        if (!string.IsNullOrWhiteSpace(AuthApiBaseUrl))
+        {
+            return AuthApiBaseUrl;
+        }
+
+        if (Uri.TryCreate(SubscriptionUrl.Trim(), UriKind.Absolute, out var subscriptionUri))
+        {
+            return subscriptionUri.GetLeftPart(UriPartial.Authority);
+        }
+
+        throw new InvalidOperationException("Сервис обратной связи недоступен.");
+    }
+    private async Task RefreshAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            StatusText = "Обновляем подписку...";
+            var subscription = await LoadSubscriptionWithMetadataAsync();
+            ApplySubscription(subscription);
+            LastRefresh = DateTimeOffset.Now;
+            await SaveAsync(setStatus: false);
+            StatusText = $"Подписка обновлена: профилей {Profiles.Count}";
+            RefreshDerivedStatus();
+        });
+    }
+
+    private async Task ToggleConnectionAsync()
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        if (_isBootstrapVpnActive)
+        {
+            if (!string.IsNullOrEmpty(_authSessionId))
+            {
+                StatusText = "Завершаем авторизацию в Telegram...";
+                return;
+            }
+
+            StopBootstrapVpn();
+            await ConnectAsync();
+            return;
+        }
+
+        if (IsConnected)
+        {
+            await DisconnectAsync();
+            return;
+        }
+
+        if (!CanUseVpn)
+        {
+            StatusText = SubscriptionBlockedMessage;
+            return;
+        }
+
+        await ConnectAsync();
+    }
+
+    private async Task ConnectAsync()
+    {
+        if (!CanUseVpn)
+        {
+            StatusText = SubscriptionBlockedMessage;
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            if (!CanUseVpn)
+            {
+                StatusText = SubscriptionBlockedMessage;
+                return;
+            }
+
+            if (Profiles.Count == 0)
+            {
+                StatusText = "Загружаем подписку...";
+                ApplySubscription(await LoadSubscriptionWithMetadataAsync());
+            }
+
+            if (!CanUseVpn)
+            {
+                StatusText = SubscriptionBlockedMessage;
+                return;
+            }
+
+            _vpnConnectionLifecycle.BeginConnection();
+            ConnectionPhase = _vpnConnectionLifecycle.Phase;
+
+            var selectedProcesses = GetSelectedProcessNames();
+            var selectedProcessPaths = GetSelectedApplicationPaths().Values.ToArray();
+            AppendDiagnosticLog($"Запуск Mihomo. Профили: {GetProfileTypes()}.");
+            StatusText = "Готовим конфигурацию...";
+            try
+            {
+                var configPath = await _mihomoConfigBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses, selectedProcessPaths);
+                LastConfigPath = configPath;
+                StatusText = "Проверяем конфигурацию Mihomo...";
+                using (var configLock = _mihomoService.LockConfigForExecution(configPath))
+                {
+                    var diagnostic = await _mihomoService.CheckConfigAsync(configPath);
+                    ApplyDiagnosticResult(diagnostic);
+                    if (!diagnostic.Success)
+                    {
+                        AppendDiagnosticLog("Ошибка проверки конфигурации Mihomo. Код: CONFIG_CHECK_FAILED.");
+                        throw new InvalidOperationException(diagnostic.Message);
+                    }
+
+                    await _mihomoService.StartAsync(configPath, useTunMode: true);
+                }
+
+                _systemProxyService.Restore();
+                _vpnConnectionLifecycle.BeginVerification();
+                ConnectionPhase = _vpnConnectionLifecycle.Phase;
+                StatusText = "Проверяем VPN-соединение...";
+                try
+                {
+                    await _vpnConnectivityVerifier.VerifyAsync();
+                    if (!_vpnConnectionLifecycle.TryMarkConnected(_mihomoService.IsRunning, connectivityVerified: true))
+                    {
+                        throw new InvalidOperationException("Mihomo завершился до подтверждения VPN-соединения.");
+                    }
+                }
+                catch (Exception error)
+                {
+                    throw new InvalidOperationException("VPN-соединение не подтверждено. Попробуйте подключиться снова.", error);
+                }
+
+                ConnectionPhase = _vpnConnectionLifecycle.Phase;
+                AppendDiagnosticLog("Mihomo запущен и VPN-соединение подтверждено.");
+                IsConnected = true;
+                await RefreshServerAvailabilityAsync();
+                LastRefresh ??= DateTimeOffset.Now;
+                await SaveAsync(setStatus: false);
+                StatusText = TrafficMode == TrafficMode.AllTraffic
+                    ? "Подключено: весь трафик идет через VPN"
+                    : $"Подключено: приложений через VPN {selectedProcesses.Count}";
+                RefreshDerivedStatus();
+            }
+            catch
+            {
+                _mihomoService.Stop();
+                CleanupMihomoConfig();
+                _vpnConnectionLifecycle.MarkError();
+                ConnectionPhase = _vpnConnectionLifecycle.Phase;
+                IsConnected = false;
+                throw;
+            }
+        });
+
+        if (!IsConnected && ConnectionPhase is VpnConnectionPhase.Connecting or VpnConnectionPhase.Verifying)
+        {
+            _vpnConnectionLifecycle.MarkError();
+            ConnectionPhase = _vpnConnectionLifecycle.Phase;
+        }
+    }
+
+    private Task DisconnectAsync()
+    {
+        if (_isBootstrapVpnActive)
+        {
+            StopBootstrapVpn();
+            StatusText = "Временный VPN отключён.";
+            return Task.CompletedTask;
+        }
+        _vpnConnectionLifecycle.BeginDisconnect();
+        ConnectionPhase = _vpnConnectionLifecycle.Phase;
+        AppendDiagnosticLog("Остановка процесса Mihomo.");
+        _systemProxyService.Restore();
+        _mihomoService.Stop();
+        CleanupMihomoConfig();
+        IsConnected = false;
+        _vpnConnectionLifecycle.MarkDisconnected();
+        ConnectionPhase = _vpnConnectionLifecycle.Phase;
+        StatusText = "Отключено";
+        _ = RefreshServerAvailabilityAsync();
+        RefreshDerivedStatus();
+        return Task.CompletedTask;
+    }
+
+    private void OnMihomoUnexpectedExit(object? sender, MihomoExitedEventArgs eventArgs)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(() =>
+        {
+            if (!_vpnConnectionLifecycle.TryHandleUnexpectedExit())
+            {
+                return;
+            }
+
+            ConnectionPhase = _vpnConnectionLifecycle.Phase;
+            IsConnected = false;
+            _systemProxyService.Restore();
+            CleanupMihomoConfig();
+            StatusText = "VPN-соединение прервано. Подключитесь снова.";
+            AppendDiagnosticLog($"Mihomo неожиданно завершился. Код: {eventArgs.ExitCode}.");
+            RefreshDerivedStatus();
+        });
+    }
+
+    private async Task RunDiagnosticsAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            if (Profiles.Count == 0)
+            {
+                StatusText = "Для полной проверки сначала обновите подписку.";
+                DiagnosticText = BuildBasicDiagnostic("Профили подписки пока не загружены.");
+                return;
+            }
+
+            var selectedProcesses = GetSelectedProcessNames();
+            var selectedProcessPaths = GetSelectedApplicationPaths().Values.ToArray();
+            StatusText = "Генерируем и проверяем конфигурацию Mihomo...";
+            try
+            {
+                var configPath = await _mihomoConfigBuilder.WriteConfigAsync(Profiles, TrafficMode, selectedProcesses, selectedProcessPaths);
+                LastConfigPath = configPath;
+                using (var configLock = _mihomoService.LockConfigForExecution(configPath))
+                {
+                    var diagnostic = await _mihomoService.CheckConfigAsync(configPath);
+                    ApplyDiagnosticResult(diagnostic);
+                    StatusText = diagnostic.Message;
+                }
+            }
+            finally
+            {
+                if (!IsConnected)
+                {
+                    CleanupMihomoConfig();
+                }
+            }
+        });
+    }
+
+    private void CleanupMihomoConfig()
+    {
+        if (!_mihomoConfigFileStore.TryDelete())
+        {
+            AppendDiagnosticLog("Не удалось удалить временный конфиг Mihomo.");
+        }
+    }
+
+    private async Task BrowseApplicationAsync()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Выберите приложение",
+            Filter = "Приложения Windows (*.exe)|*.exe"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            await AddApplicationAsync(dialog.FileName, dialog.FileName);
+        }
+    }
+
+    private async Task AddApplicationAsync(string value, string path)
+    {
+        await RunBusyAsync(async () =>
+        {
+            var processName = NormalizeProcessName(value);
+            if (string.IsNullOrWhiteSpace(processName))
+            {
+                StatusText = "Выберите приложение или введите имя процесса";
+                return;
+            }
+
+            var fullPath = File.Exists(path) ? path : "";
+            var existing = AvailableApplications.FirstOrDefault(
+                app => app.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase));
+
+            if (existing is not null && string.IsNullOrWhiteSpace(fullPath))
+            {
+                existing.IsSelected = true;
+            }
+            else
+            {
+                if (existing is not null)
+                {
+                    AvailableApplications.Remove(existing);
+                }
+
+                AvailableApplications.Insert(0, new InstalledApplication
+                {
+                    DisplayName = Path.GetFileNameWithoutExtension(processName),
+                    ProcessName = processName,
+                    Path = fullPath,
+                    Icon = _applicationIconService.GetIcon(fullPath),
+                    IsSelected = true
+                });
+            }
+
+            await SaveAsync(setStatus: false);
+            StatusText = $"Добавлено приложение: {processName}";
+            OnPropertyChanged(nameof(SelectedApplicationsText));
+        });
+    }
+
+    public async Task RemoveApplicationAsync(InstalledApplication application)
+    {
+        if (!AvailableApplications.Contains(application))
+        {
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            AvailableApplications.Remove(application);
+            await SaveAsync(setStatus: false);
+            StatusText = $"Удалено приложение: {application.ProcessName}";
+        });
+    }
+
+    private Task SaveAsync()
+    {
+        return SaveAsync(setStatus: true);
+    }
+
+    private async Task SaveAsync(bool setStatus)
+    {
+        await _settingsStore.SaveAsync(new AppSettings
+        {
+            SubscriptionUrl = SubscriptionUrl.Trim(),
+            AuthApiBaseUrl = AuthApiBaseUrl.Trim(),
+            TrafficMode = TrafficMode,
+            LastSubscriptionRefresh = LastRefresh,
+            SelectedProcessNames = GetSelectedProcessNames().ToList(),
+            SelectedApplicationPaths = GetSelectedApplicationPaths(),
+            AccountSession = AccountSession
+        });
+
+        if (setStatus)
+        {
+            StatusText = IsConnected
+                ? "Настройки сохранены и будут применены после переподключения"
+                : "Настройки сохранены";
+            SettingsSaved?.Invoke(this, EventArgs.Empty);
+        }
+
+        OnPropertyChanged(nameof(SelectedApplicationsText));
+    }
+
+    private Task OpenDataFolderAsync()
+    {
+        AppPaths.EnsureDataDirectory();
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = AppPaths.DataDirectory,
+            UseShellExecute = true
+        });
+
+        return Task.CompletedTask;
+    }
+
+    private void LoadSavedApplications(
+        IEnumerable<string> selectedProcessNames,
+        IReadOnlyDictionary<string, string>? selectedApplicationPaths)
+    {
+        AvailableApplications.Clear();
+
+        foreach (var processName in selectedProcessNames.Select(NormalizeProcessName).Where(name => !string.IsNullOrWhiteSpace(name)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var path = selectedApplicationPaths is not null &&
+                selectedApplicationPaths.TryGetValue(processName, out var savedPath) &&
+                File.Exists(savedPath)
+                ? savedPath
+                : "";
+
+            AvailableApplications.Add(new InstalledApplication
+            {
+                DisplayName = Path.GetFileNameWithoutExtension(processName),
+                ProcessName = processName,
+                Path = path,
+                Icon = _applicationIconService.GetIcon(path),
+                IsSelected = true
+            });
+        }
+
+        OnPropertyChanged(nameof(SelectedApplicationsText));
+    }
+
+    private List<string> GetSelectedProcessNames()
+    {
+        return AvailableApplications
+            .Where(app => app.IsSelected)
+            .Select(app => NormalizeProcessName(app.ProcessName))
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private Dictionary<string, string> GetSelectedApplicationPaths()
+    {
+        return AvailableApplications
+            .Where(app => app.IsSelected && File.Exists(app.Path))
+            .GroupBy(app => NormalizeProcessName(app.ProcessName), StringComparer.OrdinalIgnoreCase)
+            .Where(group => !string.IsNullOrWhiteSpace(group.Key))
+            .ToDictionary(group => group.Key, group => group.First().Path, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void OnAvailableApplicationsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (InstalledApplication application in e.OldItems)
+            {
+                application.PropertyChanged -= OnApplicationPropertyChanged;
+            }
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (InstalledApplication application in e.NewItems)
+            {
+                application.PropertyChanged += OnApplicationPropertyChanged;
+            }
+        }
+    }
+
+    private void OnApplicationPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(InstalledApplication.IsSelected))
+        {
+            OnPropertyChanged(nameof(SelectedApplicationsText));
+        }
+    }
+
+    private void OnLogReceived(object? sender, string content)
+    {
+        VpnLogText = TrimLogText(VpnLogText + content);
+    }
+
+    private void AppendDiagnosticLog(string message)
+    {
+        if (!IsLogMonitoring)
+        {
+            return;
+        }
+
+        VpnLogText = TrimLogText($"{VpnLogText}[{DateTimeOffset.Now:HH:mm:ss}] [CosmoNet] {message}{Environment.NewLine}");
+    }
+
+    private string GetProfileTypes()
+    {
+        var types = Profiles
+            .OrderBy(profile => profile.ConnectionPriority)
+            .Select(profile => profile.Security.Equals("reality", StringComparison.OrdinalIgnoreCase)
+                ? "REALITY"
+                : profile.Network.Equals("ws", StringComparison.OrdinalIgnoreCase)
+                    ? "WS"
+                    : "TCP")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return types.Count == 0 ? "не определены" : string.Join(" -> ", types);
+    }
+
+    private static string TrimLogText(string text)
+    {
+        return text.Length <= MaximumLogTextLength
+            ? text
+            : text[^MaximumLogTextLength..];
+    }
+
+    private static string NormalizeProcessName(string value)
+    {
+        var processName = value.Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            return "";
+        }
+
+        processName = Path.GetFileName(processName);
+        return processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? processName
+            : $"{processName}.exe";
+    }
+
+    private void ApplySubscription(SubscriptionLoadResult subscription)
+    {
+        var previousExpiresAt = Subscription.ExpiresAt;
+
+        ReplaceProfiles(subscription.Profiles);
+        _ = RefreshServerAvailabilityAsync();
+
+        AccountSession = new AccountSession
+        {
+            IsAuthorized = AccountSession.IsAuthorized,
+            DisplayName = AccountSession.IsAuthorized ? AccountSession.DisplayName : "Подписка загружена по ссылке",
+            AuthorizedAt = AccountSession.AuthorizedAt,
+            Subscription = subscription.Summary
+        };
+
+        NotifyAboutSubscriptionChange(previousExpiresAt, subscription.Summary.ExpiresAt);
+    }
+
+    private void NotifyAboutSubscriptionChange(DateTimeOffset? previousExpiresAt, DateTimeOffset? currentExpiresAt)
+    {
+        if (currentExpiresAt is null)
+        {
+            return;
+        }
+
+        var currentLocal = currentExpiresAt.Value.ToLocalTime();
+        if (previousExpiresAt is { } previous && currentLocal > previous.ToLocalTime())
+        {
+            var extendedDays = Math.Max(1, (currentLocal.Date - previous.ToLocalTime().Date).Days);
+            _expiryWarningShownFor = null;
+            SubscriptionNotificationRequested?.Invoke(
+                this,
+                $"Подписка продлена на {extendedDays} дн. Новая дата: {currentLocal:dd.MM.yyyy}.");
+            return;
+        }
+
+        var daysLeft = (currentLocal.Date - DateTime.Now.Date).Days;
+        if (daysLeft is >= 0 and <= 3 && _expiryWarningShownFor != currentExpiresAt)
+        {
+            _expiryWarningShownFor = currentExpiresAt;
+            SubscriptionNotificationRequested?.Invoke(
+                this,
+                "До окончания подписки осталось менее 3 дней. Продлите подписку, иначе VPN перестанет работать.");
+        }
+    }
+
+    private void ReplaceProfiles(IEnumerable<VpnProfile> profiles)
+    {
+        Profiles.Clear();
+        foreach (var profile in profiles)
+        {
+            Profiles.Add(profile);
+        }
+    }
+
+    private async Task RefreshServerAvailabilityAsync()
+    {
+        if (_isCheckingServerAvailability)
+        {
+            return;
+        }
+
+        _isCheckingServerAvailability = true;
+        try
+        {
+            var profile = PreferredProfile;
+            var host = !string.IsNullOrWhiteSpace(profile?.Server)
+                ? profile.Server
+                : DefaultProbeHost;
+            var port = profile?.Port > 0
+                ? profile.Port
+                : DefaultProbePort;
+
+            var isAvailable = false;
+            try
+            {
+                if (IPAddress.TryParse(host, out var address) && !SecurityPolicy.IsPublicAddress(address)) return;
+                using var client = new TcpClient();
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await client.ConnectAsync(host, port, timeout.Token);
+                isAvailable = client.Connected;
+            }
+            catch
+            {
+                isAvailable = false;
+            }
+
+            if (_isServerAvailable != isAvailable)
+            {
+                _isServerAvailable = isAvailable;
+                OnPropertyChanged(nameof(ServerStatusText));
+                OnPropertyChanged(nameof(ServerStatusColor));
+            }
+        }
+        finally
+        {
+            _isCheckingServerAvailability = false;
+        }
+    }
+
+    private async Task RunBusyAsync(Func<Task> action)
+    {
+        try
+        {
+            IsBusy = true;
+            await action();
+        }
+        catch (Exception error)
+        {
+            AppendDiagnosticLog($"Ошибка подключения. Код: 0x{error.HResult:X8}.");
+            StatusText = error.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void ApplyDiagnosticResult(CoreDiagnosticResult result)
+    {
+        DiagnosticText = string.IsNullOrWhiteSpace(result.Details)
+            ? BuildBasicDiagnostic(result.Message)
+            : $"{BuildBasicDiagnostic(result.Message)}{Environment.NewLine}{Environment.NewLine}{result.Details}";
+    }
+
+    private string BuildBasicDiagnostic(string headline)
+    {
+        return string.Join(Environment.NewLine,
+        [
+            headline,
+            $"Ядро: {AppPaths.BundledMihomoPath}",
+            $"Конфиг: {LastConfigPath}",
+            $"Администратор: {(_mihomoService.IsAdministrator ? "да" : "нет")}",
+            $"Хранилище секретов: {AppPaths.SecretSettingsPath}",
+            $"Режим трафика: {TrafficModeText}",
+            SelectedApplicationsText
+        ]);
+    }
+
+    private void RefreshDerivedStatus()
+    {
+        OnPropertyChanged(nameof(ServerStatusText));
+        OnPropertyChanged(nameof(ServerStatusColor));
+        OnPropertyChanged(nameof(CurrentCountryName));
+        OnPropertyChanged(nameof(CurrentCountryFlag));
+        OnPropertyChanged(nameof(CurrentCountryCode));
+        OnPropertyChanged(nameof(ConnectionStatusTitle));
+        OnPropertyChanged(nameof(ConnectionStateText));
+        OnPropertyChanged(nameof(PowerButtonColor));
+        OnPropertyChanged(nameof(PowerButtonToolTip));
+        OnPropertyChanged(nameof(CanUseVpn));
+        OnPropertyChanged(nameof(IsSubscriptionBlocked));
+        OnPropertyChanged(nameof(SubscriptionBlockedMessage));
+        OnPropertyChanged(nameof(CanUsePowerButton));
+        OnPropertyChanged(nameof(TrafficModeText));
+        OnPropertyChanged(nameof(SelectedApplicationsText));
+        RefreshSubscriptionStatus();
+    }
+
+    private void RefreshSubscriptionStatus()
+    {
+        OnPropertyChanged(nameof(Subscription));
+        OnPropertyChanged(nameof(CanUseVpn));
+        OnPropertyChanged(nameof(IsSubscriptionBlocked));
+        OnPropertyChanged(nameof(SubscriptionBlockedMessage));
+        OnPropertyChanged(nameof(CanUsePowerButton));
+        OnPropertyChanged(nameof(PowerButtonToolTip));
+        OnPropertyChanged(nameof(ConnectionStateText));
+        RaiseCommandStates();
+        OnPropertyChanged(nameof(AccountDisplayText));
+        OnPropertyChanged(nameof(SubscriptionExpiresText));
+        OnPropertyChanged(nameof(SubscriptionStatusText));
+        OnPropertyChanged(nameof(SubscriptionTariffText));
+        OnPropertyChanged(nameof(SubscriptionDevicesText));
+        OnPropertyChanged(nameof(SubscriptionTrafficText));
+        OnPropertyChanged(nameof(SubscriptionLastSyncText));
+        OnPropertyChanged(nameof(SubscriptionModalStatusText));
+        OnPropertyChanged(nameof(SubscriptionModalStatusColor));
+        OnPropertyChanged(nameof(SubscriptionModalExpiresText));
+        OnPropertyChanged(nameof(SubscriptionModalCountryText));
+        OnPropertyChanged(nameof(SubscriptionModalDeviceLimitText));
+        OnPropertyChanged(nameof(SubscriptionModalTrafficUsedText));
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return "0 Б";
+        }
+
+        string[] units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+        var value = (double)bytes;
+        var unit = 0;
+
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:0.#} {units[unit]}";
+    }
+
+    private void RaiseCommandStates()
+    {
+        ((RelayCommand)RefreshCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)PowerCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)DisconnectCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)SaveCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)BrowseApplicationCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)ShowAuthMethodsCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)LoginCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)LogoutCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)RunDiagnosticsCommand).RaiseCanExecuteChanged();
+        RaiseFeedbackCommandState();
+    }
+
+    private void RaiseFeedbackCommandState()
+    {
+        ((RelayCommand)SubmitFeedbackCommand).RaiseCanExecuteChanged();
+    }
+    private void RaiseLogCommandStates()
+    {
+        ((RelayCommand)EnableLogsCommand).RaiseCanExecuteChanged();
+        ((RelayCommand)DisableLogsCommand).RaiseCanExecuteChanged();
+    }
+
+    private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+        {
+            return false;
+        }
+
+        field = value;
+        OnPropertyChanged(propertyName);
+        return true;
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}

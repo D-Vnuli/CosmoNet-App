@@ -1,0 +1,7 @@
+﻿bin/
+obj/
+artifacts/
+Resources/sing-box/*.exe
+Resources/sing-box/*.dll
+*.user
+*.suo

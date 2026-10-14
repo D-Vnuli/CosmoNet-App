@@ -1,0 +1,32 @@
+namespace CosmoNet.App.Services;
+
+public static class AppPaths
+{
+    public static string DataDirectory { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "CosmoNet");
+
+    public static string SettingsPath => Path.Combine(DataDirectory, "settings.json");
+    public static string SecretSettingsPath => Path.Combine(DataDirectory, "secrets.dat");
+    public static string BootstrapConfigPath => Path.Combine(DataDirectory, "sing-box-bootstrap.json");
+    public static string SingBoxLogPath => Path.Combine(DataDirectory, "sing-box.log");
+    public static string MihomoConfigPath => Path.Combine(DataDirectory, "mihomo.yaml");
+    public static string MihomoLogPath => Path.Combine(DataDirectory, "mihomo.log");
+
+    public static string BundledSingBoxPath => Path.Combine(
+        AppContext.BaseDirectory,
+        "Resources",
+        "sing-box",
+        "sing-box.exe");
+
+    public static string BundledMihomoPath => Path.Combine(
+        AppContext.BaseDirectory,
+        "Resources",
+        "mihomo",
+        "mihomo.exe");
+
+    public static void EnsureDataDirectory()
+    {
+        Directory.CreateDirectory(DataDirectory);
+    }
+}
